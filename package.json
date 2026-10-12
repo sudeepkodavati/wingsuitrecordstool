@@ -13,7 +13,7 @@
     "test": "npm test -w client",
     "typecheck": "npm run typecheck -w client"
   },
-  "overrides": {
-    "@testing-library/dom": "9.3.4"
+  "engines": {
+    "node": ">=22"
   }
 }

@@ -90,8 +90,9 @@ Export or Print PDF; the first print takes a moment longer.
 
 ## Running
 
-Requires Node 16.14 or newer. Dependencies are pinned to versions that support Node 16; see
-[Upgrading](#upgrading).
+Requires **Node 22 or newer** (pinned in `.nvmrc`). With [fnm](https://github.com/Schniz/fnm),
+running `fnm use` in the repo root switches to it. Add `eval "$(fnm env --use-on-cd)"` to your
+shell profile to switch automatically.
 
 ```bash
 npm install
@@ -108,10 +109,10 @@ links like `/events/<id>` work on reload.
 
 ## Upgrading
 
-The toolchain is held back because this machine runs Node 16. On Node 20 or newer, upgrade to
-Vite 6+, Vitest 3+ and React Router 7. That clears the current `npm audit` findings, which are
-all dev-server or test-only issues, or apply to React Router features this app doesn't use (SSR,
-user-supplied link targets).
+The toolchain is current: Node 22, Vite 8, Vitest 5, TypeScript 7 and React Router 7. Tailwind is
+still on v3.4. The remaining `npm audit` findings all come from Tailwind 3's build-time
+dependencies (braces, micromatch, postcss-selector-parser); they never reach the deployed site.
+Migrating to Tailwind 4 clears them.
 
 ## Known limitations
 
