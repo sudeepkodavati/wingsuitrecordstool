@@ -14,5 +14,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // Needs the local Supabase stack; run with `npm run test:db`.
+    exclude: ['**/node_modules/**', '**/*.integration.test.ts'],
   },
 });

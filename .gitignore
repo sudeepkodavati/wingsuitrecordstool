@@ -2,3 +2,8 @@ node_modules
 dist
 *.log
 .DS_Store
+
+# Local environment (Supabase URL/key per machine)
+.env
+.env.*
+!.env.example

@@ -11,9 +11,17 @@
     "build": "npm run build -w client",
     "preview": "npm run preview -w client",
     "test": "npm test -w client",
-    "typecheck": "npm run typecheck -w client"
+    "typecheck": "npm run typecheck -w client",
+    "test:db": "npm run test:db -w client",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "dev:localdb": "npm run dev:localdb -w client"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "supabase": "^2.120.0"
   }
 }
