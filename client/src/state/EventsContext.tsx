@@ -1,73 +1,199 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { loadEvents, saveEvents, STORAGE_KEYS } from '../lib/storage';
-import type { EventDetails, OpResult, RecordEvent, RecordInput, SkydiverInput } from '../types';
-import * as ops from './eventOps';
-import { useOrganizer } from './OrganizerContext';
+import { StoreError, type EventStore, type ImportResult } from '../data/store';
+import {
+  normalizeEventDetails,
+  normalizeRecord,
+  normalizeSkydiver,
+  validateEventDetails,
+  validateRecord,
+  validateSkydiver,
+} from '../lib/validation';
+import type { EventDetails, FieldErrors, RecordEntry, RecordEvent, RecordInput, SkydiverInput } from '../types';
+import { useAuth } from './AuthContext';
+
+export type ActionResult = { ok: true; id?: string } | { ok: false; errors: FieldErrors };
 
 interface EventsContextValue {
+  status: 'loading' | 'ready' | 'error';
+  loadError: string;
   events: RecordEvent[];
+  /** `quiet` refreshes in the background without the full-page loading state. */
+  reload: (options?: { quiet?: boolean }) => Promise<void>;
   getEvent: (id: string) => RecordEvent | undefined;
+  /** Can the signed-in user change this event? Admins: always. Organizers: events they created. */
   isOwner: (event: RecordEvent) => boolean;
-  createEvent: (details: EventDetails) => OpResult;
-  updateEvent: (id: string, details: EventDetails) => OpResult;
-  deleteEvent: (id: string) => OpResult;
-  addSkydiver: (eventId: string, input: SkydiverInput) => OpResult;
-  updateSkydiver: (eventId: string, skydiverId: string, input: SkydiverInput) => OpResult;
-  removeSkydiver: (eventId: string, skydiverId: string) => OpResult;
-  addRecord: (eventId: string, input: RecordInput) => OpResult;
-  updateRecord: (eventId: string, recordId: string, input: RecordInput) => OpResult;
-  deleteRecord: (eventId: string, recordId: string) => OpResult;
+  /** Did the signed-in user create this event? */
+  isMine: (event: RecordEvent) => boolean;
+  createEvent: (details: EventDetails) => Promise<ActionResult>;
+  updateEvent: (id: string, details: EventDetails) => Promise<ActionResult>;
+  deleteEvent: (id: string) => Promise<ActionResult>;
+  addSkydiver: (eventId: string, input: SkydiverInput) => Promise<ActionResult>;
+  updateSkydiver: (eventId: string, skydiverId: string, input: SkydiverInput) => Promise<ActionResult>;
+  removeSkydiver: (eventId: string, skydiverId: string) => Promise<ActionResult>;
+  addRecord: (eventId: string, input: RecordInput) => Promise<ActionResult>;
+  updateRecord: (eventId: string, recordId: string, input: RecordInput) => Promise<ActionResult>;
+  deleteRecord: (eventId: string, recordId: string) => Promise<ActionResult>;
+  importEvents: (events: RecordEvent[]) => Promise<ImportResult>;
 }
 
 const EventsContext = createContext<EventsContextValue | null>(null);
 
-export function EventsProvider({ children }: { children: ReactNode }) {
-  const { current } = useOrganizer();
-  const [events, setEvents] = useState<RecordEvent[]>(loadEvents);
-  // Ref lets operations run synchronously against the latest list and return their result.
+const hasErrors = (e: FieldErrors) => Object.keys(e).length > 0;
+
+function failure(err: unknown): ActionResult {
+  if (err instanceof StoreError) {
+    return { ok: false, errors: hasErrors(err.fieldErrors) ? err.fieldErrors : { form: err.message } };
+  }
+  return { ok: false, errors: { form: 'Something went wrong. Please check your connection and try again.' } };
+}
+
+export function EventsProvider({ store, children }: { store: EventStore; children: ReactNode }) {
+  const { status: authStatus, userId, role } = useAuth();
+  const [events, setEvents] = useState<RecordEvent[]>([]);
+  const [status, setStatus] = useState<EventsContextValue['status']>('loading');
+  const [loadError, setLoadError] = useState('');
   const eventsRef = useRef(events);
   eventsRef.current = events;
 
-  useEffect(() => saveEvents(events), [events]);
-
-  // Keep multiple open tabs in sync.
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEYS.events) setEvents(loadEvents());
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  const actorId = current?.id ?? '';
-
-  const apply = useCallback((run: (events: RecordEvent[]) => OpResult): OpResult => {
-    const result = run(eventsRef.current);
-    if (result.ok) {
-      eventsRef.current = result.events;
-      setEvents(result.events);
+  const reload = useCallback(async ({ quiet = false }: { quiet?: boolean } = {}) => {
+    if (!quiet) setStatus('loading');
+    try {
+      setEvents(await store.loadEvents());
+      setStatus('ready');
+    } catch (err) {
+      setLoadError(err instanceof StoreError ? err.message : 'Could not load events. Please check your connection.');
+      setStatus('error');
     }
-    return result;
-  }, []);
+  }, [store]);
 
-  const value = useMemo<EventsContextValue>(
-    () => ({
+  useEffect(() => {
+    if (authStatus === 'signed-in') reload();
+    else setEvents([]);
+  }, [authStatus, userId, reload]);
+
+  const patchEvent = (eventId: string, fn: (e: RecordEvent) => RecordEvent) =>
+    setEvents((list) => list.map((e) => (e.id === eventId ? fn(e) : e)));
+  const current = (eventId: string) => eventsRef.current.find((e) => e.id === eventId);
+
+  const value = useMemo<EventsContextValue>(() => {
+    const attempt = async (run: () => Promise<string | void>): Promise<ActionResult> => {
+      try {
+        const id = await run();
+        return { ok: true, id: id || undefined };
+      } catch (err) {
+        return failure(err);
+      }
+    };
+
+    return {
+      status,
+      loadError,
       events,
+      reload,
       getEvent: (id) => events.find((e) => e.id === id),
-      isOwner: (event) => Boolean(actorId) && event.createdBy === actorId,
-      createEvent: (details) => apply((ev) => ops.createEvent(ev, details, actorId)),
-      updateEvent: (id, details) => apply((ev) => ops.updateEvent(ev, id, details, actorId)),
-      deleteEvent: (id) => apply((ev) => ops.deleteEvent(ev, id, actorId)),
-      addSkydiver: (eventId, input) => apply((ev) => ops.addSkydiver(ev, eventId, input, actorId)),
-      updateSkydiver: (eventId, skydiverId, input) =>
-        apply((ev) => ops.updateSkydiver(ev, eventId, skydiverId, input, actorId)),
-      removeSkydiver: (eventId, skydiverId) => apply((ev) => ops.removeSkydiver(ev, eventId, skydiverId, actorId)),
-      addRecord: (eventId, input) => apply((ev) => ops.addRecord(ev, eventId, input, actorId)),
-      updateRecord: (eventId, recordId, input) => apply((ev) => ops.updateRecord(ev, eventId, recordId, input, actorId)),
-      deleteRecord: (eventId, recordId) => apply((ev) => ops.deleteRecord(ev, eventId, recordId, actorId)),
-    }),
-    [events, actorId, apply],
-  );
+      isOwner: (event) => role === 'admin' || (Boolean(userId) && event.createdBy === userId),
+      isMine: (event) => Boolean(userId) && event.createdBy === userId,
+
+      createEvent: async (details) => {
+        const clean = normalizeEventDetails(details);
+        const errors = validateEventDetails(clean);
+        if (hasErrors(errors)) return { ok: false, errors };
+        return attempt(async () => {
+          const created = await store.createEvent(clean);
+          setEvents((list) => [...list, created]);
+          return created.id;
+        });
+      },
+
+      updateEvent: async (id, details) => {
+        const clean = normalizeEventDetails(details);
+        const errors = validateEventDetails(clean);
+        if (hasErrors(errors)) return { ok: false, errors };
+        return attempt(async () => {
+          const saved = await store.updateEvent(id, clean);
+          patchEvent(id, (e) => ({ ...e, ...saved, skydivers: e.skydivers, records: e.records }));
+        });
+      },
+
+      deleteEvent: (id) =>
+        attempt(async () => {
+          await store.deleteEvent(id);
+          setEvents((list) => list.filter((e) => e.id !== id));
+        }),
+
+      addSkydiver: async (eventId, input) => {
+        const event = current(eventId);
+        if (!event) return { ok: false, errors: { form: 'Event not found' } };
+        const clean = normalizeSkydiver(input);
+        const errors = validateSkydiver(clean, event);
+        if (hasErrors(errors)) return { ok: false, errors };
+        return attempt(async () => {
+          const saved = await store.addSkydiver(eventId, clean);
+          patchEvent(eventId, (e) => ({
+            ...e,
+            skydivers: [...e.skydivers, saved],
+            nextJumperNumber: Math.max(e.nextJumperNumber, saved.jumperNumber + 1),
+          }));
+          return saved.id;
+        });
+      },
+
+      updateSkydiver: async (eventId, skydiverId, input) => {
+        const event = current(eventId);
+        if (!event) return { ok: false, errors: { form: 'Event not found' } };
+        const clean = normalizeSkydiver(input);
+        const errors = validateSkydiver(clean, event, skydiverId);
+        if (hasErrors(errors)) return { ok: false, errors };
+        return attempt(async () => {
+          const saved = await store.updateSkydiver(eventId, skydiverId, clean);
+          patchEvent(eventId, (e) => ({ ...e, skydivers: e.skydivers.map((s) => (s.id === skydiverId ? saved : s)) }));
+        });
+      },
+
+      removeSkydiver: (eventId, skydiverId) =>
+        attempt(async () => {
+          const records: RecordEntry[] = await store.removeSkydiver(eventId, skydiverId);
+          patchEvent(eventId, (e) => ({ ...e, skydivers: e.skydivers.filter((s) => s.id !== skydiverId), records }));
+        }),
+
+      addRecord: async (eventId, input) => {
+        const event = current(eventId);
+        if (!event) return { ok: false, errors: { form: 'Event not found' } };
+        const clean = normalizeRecord(input, event);
+        const errors = validateRecord(clean, event);
+        if (hasErrors(errors)) return { ok: false, errors };
+        return attempt(async () => {
+          const saved = await store.addRecord(eventId, clean);
+          patchEvent(eventId, (e) => ({ ...e, records: [...e.records, saved] }));
+          return saved.id;
+        });
+      },
+
+      updateRecord: async (eventId, recordId, input) => {
+        const event = current(eventId);
+        if (!event) return { ok: false, errors: { form: 'Event not found' } };
+        const clean = normalizeRecord(input, event);
+        const errors = validateRecord(clean, event);
+        if (hasErrors(errors)) return { ok: false, errors };
+        return attempt(async () => {
+          const saved = await store.updateRecord(eventId, recordId, clean);
+          patchEvent(eventId, (e) => ({ ...e, records: e.records.map((r) => (r.id === recordId ? saved : r)) }));
+        });
+      },
+
+      deleteRecord: (eventId, recordId) =>
+        attempt(async () => {
+          await store.deleteRecord(eventId, recordId);
+          patchEvent(eventId, (e) => ({ ...e, records: e.records.filter((r) => r.id !== recordId) }));
+        }),
+
+      importEvents: async (incoming) => {
+        const result = await store.importEvents(incoming);
+        await reload({ quiet: true });
+        return result;
+      },
+    };
+  }, [events, status, loadError, reload, store, role, userId]);
 
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;
 }

@@ -5,7 +5,7 @@ import { Field, TextField } from '../components/FormField';
 import { emptyJudge, LOCAL_JUDGE_ROLES, REMOTE_JUDGE_ROLES, withRole } from '../lib/judges';
 import { US_STATES } from '../lib/usStates';
 import { useEvents } from '../state/EventsContext';
-import { useOrganizer } from '../state/OrganizerContext';
+import { useAuth } from '../state/AuthContext';
 import type { Contact, EventDetails, FieldErrors, Judge, RecordEvent } from '../types';
 
 const emptyContact = (): Contact => ({ name: '', phone: '', email: '' });
@@ -33,7 +33,7 @@ export function EventFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { getEvent, isOwner, createEvent, updateEvent } = useEvents();
-  const { current } = useOrganizer();
+  const { displayName } = useAuth();
   const existing = id ? getEvent(id) : undefined;
 
   const [values, setValues] = useState<EventDetails>(() =>
@@ -47,13 +47,14 @@ export function EventFormPage() {
           startDate: '',
           endDate: '',
           aircraft: '',
-          organizer: { ...emptyContact(), name: current?.name ?? '' },
+          organizer: { ...emptyContact(), name: displayName },
           localJudge: emptyJudge(),
           remoteJudges: [],
           notes: '',
         },
   );
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [saving, setSaving] = useState(false);
 
   if (id && !existing) {
     return <p className="text-slate-700">Event not found. <Link to="/" className="text-sky-700 underline">Back to events</Link></p>;
@@ -72,9 +73,11 @@ export function EventFormPage() {
   const setRemoteJudge = (i: number, c: Judge) =>
     setValues((s) => ({ ...s, remoteJudges: s.remoteJudges.map((j, idx) => (idx === i ? c : j)) }));
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const result = existing ? updateEvent(existing.id, values) : createEvent(values);
+    setSaving(true);
+    const result = existing ? await updateEvent(existing.id, values) : await createEvent(values);
+    setSaving(false);
     if (!result.ok) {
       setErrors(result.errors);
       document.querySelector('[aria-invalid="true"]')?.scrollIntoView({ block: 'center' });
@@ -177,7 +180,9 @@ export function EventFormPage() {
 
       <div className="flex justify-end gap-2 pb-8">
         <Link to={existing ? `/events/${existing.id}` : '/'} className="btn-secondary">Cancel</Link>
-        <button type="submit" className="btn-primary">{existing ? 'Save changes' : 'Create event'}</button>
+        <button type="submit" className="btn-primary" disabled={saving}>
+          {saving ? 'Saving…' : existing ? 'Save changes' : 'Create event'}
+        </button>
       </div>
     </form>
   );

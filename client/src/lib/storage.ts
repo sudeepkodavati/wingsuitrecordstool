@@ -1,9 +1,13 @@
-import type { FormationGrid, OrganizerProfile, RecordEntry, RecordEvent, Skydiver } from '../types';
+// Reads events saved in this browser before sign-in and Supabase existed, so they can be imported
+// once. The app no longer writes events to localStorage.
+import type { FormationGrid, RecordEntry, RecordEvent, Skydiver } from '../types';
 import { splitFullName } from './names';
 import { DEFAULT_VIEWPOINT, isViewpoint } from './viewpoint';
 
 export const STORAGE_KEYS = {
   events: 'wsr:v1:events',
+  /** Where imported events are kept afterwards, as a backup. */
+  importedEvents: 'wsr:v1:events.imported',
   organizers: 'wsr:v1:organizers',
   currentOrganizer: 'wsr:v1:currentOrganizer',
 } as const;
@@ -19,14 +23,6 @@ function read<T>(key: string, fallback: T, isValid: (v: unknown) => boolean): T 
   }
 }
 
-function write(key: string, value: unknown): void {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage full or blocked (private mode) — the app keeps working in memory.
-  }
-}
-
 type LegacySkydiver = Skydiver & { fullName?: string };
 
 /** Older skydivers may only have `fullName`, and may lack `isVideographer`. */
@@ -37,8 +33,8 @@ function migrateSkydiver(s: LegacySkydiver): Skydiver {
   return { ...rest, ...splitFullName(fullName) };
 }
 
-// Older events may lack `records` (or a record viewpoint), or use single full names for skydivers.
-export const loadEvents = () =>
+/** Events saved in this browser before sign-in existed. Older ones may lack `records` (or a record viewpoint), or use single full names for skydivers. */
+export const loadLegacyEvents = () =>
   read<RecordEvent[]>(STORAGE_KEYS.events, [], Array.isArray).map((e) => ({
     ...e,
     records: (e.records ?? []).map(({ grid, ...r }: RecordEntry & { grid?: FormationGrid }) => ({
@@ -50,11 +46,16 @@ export const loadEvents = () =>
     })),
     skydivers: (e.skydivers ?? []).map(migrateSkydiver),
   }));
-export const saveEvents = (events: RecordEvent[]) => write(STORAGE_KEYS.events, events);
 
-export const loadOrganizers = () => read<OrganizerProfile[]>(STORAGE_KEYS.organizers, [], Array.isArray);
-export const saveOrganizers = (profiles: OrganizerProfile[]) => write(STORAGE_KEYS.organizers, profiles);
-
-export const loadCurrentOrganizerId = () =>
-  read<string | null>(STORAGE_KEYS.currentOrganizer, null, (v) => typeof v === 'string');
-export const saveCurrentOrganizerId = (id: string) => write(STORAGE_KEYS.currentOrganizer, id);
+/** After a successful import: keep the old data as a backup under another key and drop the local profiles. */
+export function markLegacyEventsImported(): void {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.events);
+    if (raw !== null) window.localStorage.setItem(STORAGE_KEYS.importedEvents, raw);
+    window.localStorage.removeItem(STORAGE_KEYS.events);
+    window.localStorage.removeItem(STORAGE_KEYS.organizers);
+    window.localStorage.removeItem(STORAGE_KEYS.currentOrganizer);
+  } catch {
+    // Storage blocked; nothing to clean up.
+  }
+}

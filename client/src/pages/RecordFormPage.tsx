@@ -42,6 +42,7 @@ export function RecordFormPage() {
   const [viewpointChosen, setViewpointChosen] = useState(Boolean(source));
   const [activePoint, setActivePoint] = useState(0);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [saving, setSaving] = useState(false);
 
   if (!event || (recordId && !existing) || (fromId && !source)) {
     return <p className="text-slate-700">{event ? 'Record' : 'Event'} not found. <Link to={event ? `/events/${event.id}` : '/'} className="text-sky-700 underline">Go back</Link></p>;
@@ -88,9 +89,11 @@ export function RecordFormPage() {
     // Default the state to the event's own state the first time "State" is chosen.
     setValues((v) => ({ ...v, zone, state: zone === 'state' ? v.state || event.state : '' }));
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const result = existing ? updateRecord(event.id, existing.id, values) : addRecord(event.id, values);
+    setSaving(true);
+    const result = existing ? await updateRecord(event.id, existing.id, values) : await addRecord(event.id, values);
+    setSaving(false);
     if (!result.ok) {
       setErrors(result.errors);
       return;
@@ -292,7 +295,9 @@ export function RecordFormPage() {
 
       <div className="flex justify-end gap-2 pb-8">
         <Link to={backTo} className="btn-secondary">Cancel</Link>
-        <button type="submit" className="btn-primary">{existing ? 'Save changes' : 'Create record'}</button>
+        <button type="submit" className="btn-primary" disabled={saving}>
+          {saving ? 'Saving…' : existing ? 'Save changes' : 'Create record'}
+        </button>
       </div>
     </form>
   );

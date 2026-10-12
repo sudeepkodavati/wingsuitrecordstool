@@ -1,14 +1,16 @@
 import { Link } from 'react-router-dom';
+import { ImportBanner } from '../components/ImportBanner';
 import { formatDateRange } from '../lib/dates';
 import { membershipStatus } from '../lib/membership';
 import { useEvents } from '../state/EventsContext';
 
 export function EventsPage() {
-  const { events, isOwner } = useEvents();
+  const { events, isMine } = useEvents();
   const sorted = [...events].sort((a, b) => b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name));
 
   return (
     <div>
+      <ImportBanner />
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Record events</h1>
@@ -32,7 +34,7 @@ export function EventsPage() {
                 <Link to={`/events/${e.id}`} className="card block h-full p-5 transition hover:border-sky-300 hover:shadow">
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="font-semibold text-slate-900">{e.name}</h2>
-                    {isOwner(e) && (
+                    {isMine(e) && (
                       <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-600/20">
                         Yours
                       </span>

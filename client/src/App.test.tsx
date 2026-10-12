@@ -1,22 +1,48 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App } from './App';
-import { STORAGE_KEYS } from './lib/storage';
+import { createMemoryStore } from './data/memoryStore';
+import { AuthContext, type AuthValue } from './state/AuthContext';
+import { EventsProvider } from './state/EventsContext';
+import { eventDetails } from './test/fixtures';
+import type { RecordEvent } from './types';
 
-function renderApp(path = '/') {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <App />
-    </MemoryRouter>,
-  );
+const USER_ID = 'user-1';
+
+function TestAuth({ value, children }: { value: Partial<AuthValue>; children: ReactNode }) {
+  const auth: AuthValue = {
+    status: 'signed-in',
+    userId: USER_ID,
+    email: 'pat@example.com',
+    role: 'organizer',
+    displayName: 'Pat Organizer',
+    signIn: async () => null,
+    signOut: async () => {},
+    ...value,
+  };
+  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 
-async function createProfileAndEvent(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText('Organizer name'), 'Pat Organizer');
-  await user.click(screen.getByRole('button', { name: 'Continue' }));
-  await user.click(screen.getByRole('link', { name: 'Create your first event' }));
+/** Renders the app signed in (by default) against an in-memory store. */
+function renderApp(path = '/', { auth = {}, events = [] }: { auth?: Partial<AuthValue>; events?: RecordEvent[] } = {}) {
+  const store = createMemoryStore(auth.userId ?? USER_ID, events);
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <TestAuth value={auth}>
+        <EventsProvider store={store}>
+          <App />
+        </EventsProvider>
+      </TestAuth>
+    </MemoryRouter>,
+  );
+  return store;
+}
+
+async function createEvent(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('link', { name: 'Create your first event' }));
 
   await user.type(screen.getByLabelText(/Event name/), 'Perris Vertical Record');
   await user.type(screen.getByLabelText(/Start date/), '2026-10-10');
@@ -25,8 +51,11 @@ async function createProfileAndEvent(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/City/), 'Perris');
   await user.selectOptions(screen.getByLabelText(/State/), 'CA');
   const organizer = screen.getByRole('heading', { name: 'Organizer' }).closest('section')!;
+  // Organizer name is prefilled from the signed-in user.
+  expect(within(organizer).getByLabelText(/Organizer name/)).toHaveValue('Pat Organizer');
   await user.type(within(organizer).getByLabelText('Phone'), '555-0100');
   await user.click(screen.getByRole('button', { name: 'Create event' }));
+  await screen.findByRole('heading', { name: 'Perris Vertical Record' });
 }
 
 async function addSkydiver(
@@ -43,15 +72,40 @@ async function addSkydiver(
 }
 
 describe('App', () => {
-  it('asks for an organizer name first', () => {
-    renderApp();
-    expect(screen.getByRole('heading', { name: 'Welcome' })).toBeInTheDocument();
+  it('shows the login screen when signed out, with no sign-up or password reset', async () => {
+    const user = userEvent.setup();
+    const signIn = vi.fn().mockResolvedValueOnce('Incorrect email or password.').mockResolvedValue(null);
+    renderApp('/', { auth: { status: 'signed-out', signIn } });
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByText(/sign up|create account/i)).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Email'), 'pat@example.com');
+    await user.type(screen.getByLabelText('Password'), 'wrong');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect email or password.');
+    expect(signIn).toHaveBeenCalledWith('pat@example.com', 'wrong');
+  });
+
+  it('tells signed-in users without a role that they have no access', () => {
+    renderApp('/', { auth: { status: 'no-role', role: null } });
+    expect(screen.getByRole('heading', { name: 'No access yet' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /New event/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the user and a sign-out button', async () => {
+    const user = userEvent.setup();
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    renderApp('/', { auth: { signOut } });
+    expect(screen.getByText('Pat Organizer')).toBeInTheDocument();
+    expect(screen.getByText('organizer')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(signOut).toHaveBeenCalled();
   });
 
   it('creates an event, builds a pool sorted by name, flags expired memberships, and blocks duplicates', async () => {
     const user = userEvent.setup();
-    renderApp();
-    await createProfileAndEvent(user);
+    const store = renderApp();
+    await createEvent(user);
 
     expect(screen.getByRole('heading', { name: 'Perris Vertical Record' })).toBeInTheDocument();
 
@@ -79,14 +133,14 @@ describe('App', () => {
     expect(within(rows[1]).getAllByRole('cell').map((c) => c.textContent).slice(0, 3)).toEqual(['1', 'Zoe', 'Zephyr']);
     expect(within(rows[1]).getByText('Expired')).toBeInTheDocument();
 
-    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.events)!);
+    const stored = store.snapshot();
     expect(stored[0].skydivers).toHaveLength(2);
   });
 
   it('creates a State record with skydivers picked from the pool', async () => {
     const user = userEvent.setup();
-    renderApp();
-    await createProfileAndEvent(user);
+    const store = renderApp();
+    await createEvent(user);
 
     await user.click(screen.getByRole('button', { name: '+ Add skydiver' }));
     await addSkydiver(user, { name: 'Zoe Zephyr', id: '200' });
@@ -139,14 +193,14 @@ describe('App', () => {
     expect(screen.getByText('Oct 11, 2026')).toBeInTheDocument();
     expect(screen.getByText('1 skydiver')).toBeInTheDocument();
 
-    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.events)!);
+    const stored = store.snapshot();
     expect(stored[0].records[0]).toMatchObject({ zone: 'state', state: 'NV', type: 'ws-seq-lf-nogrip-vertical', viewpoint: 'top-down', attemptDate: '2026-10-11' });
   });
 
   it('adds sequential points as exact copies, and duplicates a saved record', async () => {
     const user = userEvent.setup();
-    renderApp();
-    await createProfileAndEvent(user);
+    const store = renderApp();
+    await createEvent(user);
     await user.click(screen.getByRole('button', { name: '+ Add skydiver' }));
     await addSkydiver(user, { name: 'Alex Aero', id: '100' });
     await user.click(screen.getByRole('button', { name: 'Save & add another' }));
@@ -185,7 +239,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Create record' }));
 
     expect(screen.getByText('2 points')).toBeInTheDocument();
-    let stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.events)!);
+    let stored = store.snapshot();
     expect(stored[0].records[0].grids).toHaveLength(2);
 
     // Duplicate opens a prefilled form; nothing is saved until Create.
@@ -197,7 +251,7 @@ describe('App', () => {
     expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
     await user.click(screen.getByRole('button', { name: 'Create record' }));
 
-    stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.events)!);
+    stored = store.snapshot();
     expect(stored[0].records).toHaveLength(2);
     expect(stored[0].records[1].id).not.toBe(stored[0].records[0].id);
     expect(stored[0].records[1].grids).toEqual(stored[0].records[0].grids);
@@ -206,7 +260,7 @@ describe('App', () => {
   it('marks videographers (unchecked by default) and leaves them off the grid', async () => {
     const user = userEvent.setup();
     renderApp();
-    await createProfileAndEvent(user);
+    await createEvent(user);
 
     // Skydiver pool comes before Records on the event page.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
@@ -236,21 +290,65 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: /Vic Video/ })).not.toBeInTheDocument();
   });
 
-  it('hides edit and delete controls from other organizer profiles', async () => {
+  it("admins can manage other organizers' events; only your own get the Yours badge", async () => {
+    const others: RecordEvent = {
+      ...eventDetails({ name: 'Someone else event' }),
+      id: 'e-other',
+      createdBy: 'someone-else',
+      createdAt: '',
+      updatedAt: '',
+      nextJumperNumber: 1,
+      skydivers: [],
+      records: [],
+    };
     const user = userEvent.setup();
-    renderApp();
-    await createProfileAndEvent(user);
+    renderApp('/', { auth: { role: 'admin' }, events: [others] });
+    const card = (await screen.findByRole('link', { name: /Someone else event/ })) as HTMLElement;
+    expect(within(card).queryByText('Yours')).not.toBeInTheDocument();
+    await user.click(card);
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit event' })).toBeInTheDocument();
+    expect(screen.queryByText(/View only/)).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: /Organizer:/ }));
-    await user.type(screen.getByLabelText('Organizer name'), 'Someone Else');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+  it('offers a one-time import of events saved in this browser', async () => {
+    const legacy = {
+      ...eventDetails({ name: 'Old Browser Event' }),
+      id: 'legacy-1',
+      createdBy: 'old-profile',
+      createdAt: '',
+      updatedAt: '',
+      nextJumperNumber: 2,
+      skydivers: [],
+      records: [],
+    };
+    window.localStorage.setItem('wsr:v1:events', JSON.stringify([legacy]));
+    const user = userEvent.setup();
+    const store = renderApp();
+    await user.click(await screen.findByRole('button', { name: 'Import 1 event' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Imported 1 event into your account.');
+    expect(screen.getByRole('link', { name: /Old Browser Event/ })).toBeInTheDocument();
+    expect(store.snapshot()[0].createdBy).toBe(USER_ID);
+    expect(window.localStorage.getItem('wsr:v1:events')).toBeNull();
+    expect(window.localStorage.getItem('wsr:v1:events.imported')).not.toBeNull();
+  });
 
+  it('organizers get a read-only view of events they did not create', async () => {
+    const others: RecordEvent = {
+      ...eventDetails({ name: 'Someone else event' }),
+      id: 'e-other',
+      createdBy: 'someone-else',
+      createdAt: '',
+      updatedAt: '',
+      nextJumperNumber: 1,
+      skydivers: [],
+      records: [],
+    };
+    renderApp('/events/e-other', { events: [others] });
+    expect(await screen.findByText(/View only/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Edit event' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ Add skydiver' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '+ New record' })).not.toBeInTheDocument();
-    expect(screen.getByText(/View only/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export PDF' })).toBeInTheDocument();
   });
 });

@@ -28,9 +28,10 @@ function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: Re
   const videographers = members.filter((s) => s.isVideographer).length;
   const flyers = members.length - videographers;
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (window.confirm(`Delete the ${recordZoneText(record)} "${title}" record? The skydivers stay in the event pool.`)) {
-      deleteRecord(event.id, record.id);
+      const result = await deleteRecord(event.id, record.id);
+      if (!result.ok) setPrintError(result.errors.form ?? 'Could not delete the record.');
     }
   };
 

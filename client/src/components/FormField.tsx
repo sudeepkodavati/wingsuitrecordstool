@@ -35,7 +35,7 @@ interface TextFieldProps {
   error?: string;
   hint?: string;
   required?: boolean;
-  type?: 'text' | 'email' | 'tel' | 'date';
+  type?: 'text' | 'email' | 'tel' | 'date' | 'password';
   placeholder?: string;
   autoComplete?: string;
   inputMode?: 'text' | 'numeric' | 'tel' | 'email';

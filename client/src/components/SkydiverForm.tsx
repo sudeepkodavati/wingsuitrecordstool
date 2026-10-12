@@ -2,7 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { isValidIsoDate } from '../lib/dates';
 import { membershipStatus } from '../lib/membership';
 import { displayName } from '../lib/names';
-import type { FieldErrors, OpResult, RecordEvent, SkydiverInput } from '../types';
+import type { ActionResult } from '../state/EventsContext';
+import type { FieldErrors, RecordEvent, SkydiverInput } from '../types';
 import { TextField } from './FormField';
 import { MembershipBadge } from './MembershipBadge';
 
@@ -21,7 +22,7 @@ interface Props {
   initial?: SkydiverInput;
   jumperNumber: number;
   submitLabel: string;
-  onSubmit: (input: SkydiverInput) => OpResult;
+  onSubmit: (input: SkydiverInput) => Promise<ActionResult>;
   onDone: () => void;
   onCancel: () => void;
   /** When set, a second button saves and resets the form for the next entry. */
@@ -31,22 +32,23 @@ interface Props {
 export function SkydiverForm({ event, initial, jumperNumber, submitLabel, onSubmit, onDone, onCancel, allowAddAnother }: Props) {
   const [values, setValues] = useState<SkydiverInput>(initial ?? EMPTY);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [number, setNumber] = useState(jumperNumber);
+  const [saving, setSaving] = useState(false);
   const [lastAdded, setLastAdded] = useState<string | null>(null);
 
   const set = (field: Exclude<keyof SkydiverInput, 'isVideographer'>) => (v: string) => setValues((s) => ({ ...s, [field]: v }));
 
-  const submit = (addAnother: boolean) => {
-    const result = onSubmit(values);
+  const submit = async (addAnother: boolean) => {
+    setSaving(true);
+    const result = await onSubmit(values);
+    setSaving(false);
     if (!result.ok) {
       setErrors(result.errors);
       return;
     }
     if (addAnother) {
-      setLastAdded(`#${number} ${displayName(values)} added`);
+      setLastAdded(`${displayName(values)} added`);
       setValues(EMPTY);
       setErrors({});
-      setNumber((n) => n + 1);
     } else {
       onDone();
     }
@@ -63,7 +65,7 @@ export function SkydiverForm({ event, initial, jumperNumber, submitLabel, onSubm
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
       <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
         <span className="text-slate-600">Jumper number</span>
-        <span className="font-mono text-base font-semibold text-slate-900" data-testid="jumper-number">#{number}</span>
+        <span className="font-mono text-base font-semibold text-slate-900" data-testid="jumper-number">#{jumperNumber}</span>
       </div>
       {lastAdded && (
         <p role="status" className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{lastAdded}</p>
@@ -130,11 +132,11 @@ export function SkydiverForm({ event, initial, jumperNumber, submitLabel, onSubm
           {lastAdded ? 'Done' : 'Cancel'}
         </button>
         {allowAddAnother && (
-          <button type="button" className="btn-secondary" onClick={() => submit(true)}>
+          <button type="button" className="btn-secondary" onClick={() => submit(true)} disabled={saving}>
             Save &amp; add another
           </button>
         )}
-        <button type="submit" className="btn-primary">{submitLabel}</button>
+        <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : submitLabel}</button>
       </div>
     </form>
   );

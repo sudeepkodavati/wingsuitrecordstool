@@ -63,26 +63,39 @@ skydiver pool, and export the roster to PDF.
       icon grid and a names grid.
 - **PDF export**: portrait US Letter, with event details and the roster table, including membership
   status and page numbers.
-- **Organizer profiles** (no login): on first visit you enter your name. Events remember which
-  profile created them, and only that profile can edit or delete the event or change its pool.
-  Other profiles have view and export access only. This is a convenience guard, **not security**.
+- **Accounts and roles** (Supabase Auth): email + password sign-in only. An admin creates every
+  account and password in the Supabase dashboard; the app has no sign-up or password screens.
+  - **admin**: sees and manages every event.
+  - **organizer**: creates events and manages only the ones they created.
+  - An account with no role can sign in but sees a "No access yet" screen.
+  - These rules are enforced in the database (row level security), not just in the UI.
+- **One-time import**: events saved in a browser before sign-in existed (localStorage) can be
+  imported into the signed-in account, keeping jumper numbers, record skydivers and formation points.
 
-Out of scope for now: login, database, non-USPA memberships.
+Out of scope for now: a judge role, participant share links, non-USPA memberships.
 
 ## Architecture
 
-The whole app runs in the browser. There is no server.
+A static React app talking directly to Supabase (Auth + Postgres). There is no server of our own.
 
 ```
 client/  React 18 + TypeScript + Tailwind (Vite)
-  src/state/eventOps.ts     pure event/skydiver operations (ownership, validation, numbering)
-  src/state/*Context.tsx    React state, persisted to browser localStorage
-  src/lib/                  validation, membership status, dates, storage, PDF download
-  src/pdf/documents.ts      roster and record PDFs, drawn in the browser with pdfkit
+  src/state/AuthContext.tsx    Supabase session + the user's role (user_roles)
+  src/state/EventsContext.tsx  validates input, calls the store, keeps events in React state
+  src/data/supabaseStore.ts    reads/writes Supabase tables (row ↔ app types)
+  src/data/memoryStore.ts      in-memory store for UI tests (built on state/eventOps.ts)
+  src/lib/                     validation, membership status, dates, legacy import, PDF download
+  src/pdf/documents.ts         roster and record PDFs, drawn in the browser with pdfkit
+supabase/
+  migrations/                  schema, row level security, grants, triggers
+  seed.sql                     LOCAL ONLY: test admin + organizer accounts
+  config.toml                  local stack settings (sign-ups off)
 ```
 
-**Storage**: all data lives in the browser's `localStorage` (keys `wsr:v1:*`). It stays on that
-browser and device. Clearing site data erases it, and it is not shared between people.
+**Database**: `user_roles`, `events`, `skydivers`, `records` (formation points stored as JSON).
+Row level security limits every row to admins or the event's creator; anonymous visitors get no
+table access. The database also assigns jumper numbers (never reused), rejects duplicate USPA IDs
+within an event, and removes a deleted skydiver from every record and formation point.
 
 **PDFs**: built in the browser with pdfkit's standalone build, which includes its fonts. That code
 is about 1.5 MB (about 420 KB compressed), so it is downloaded only the first time someone clicks
@@ -96,12 +109,69 @@ shell profile to switch automatically.
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm test           # vitest + Testing Library (including the PDF builders)
+npm run dev          # http://localhost:5173, using client/.env.local (your Supabase project)
+npm test             # unit + UI tests (no database needed)
 npm run typecheck
-npm run build      # static site in client/dist
-npm run preview    # serve the production build locally
+npm run build        # static site in client/dist
+npm run preview      # serve the production build locally
 ```
+
+`client/.env.local` (not committed; see `client/.env.example`):
+
+```
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
+```
+
+### Local Supabase (optional, needs Docker)
+
+```bash
+npm run db:start      # start the local stack; applies migrations + seed.sql
+npm run dev:localdb   # app against the local stack (client/.env.localdb)
+npm run test:db       # database permission tests against the local stack
+npm run db:reset      # rebuild the local database from migrations + seed
+npm run db:stop
+```
+
+Create `client/.env.localdb` with the local API URL (`http://127.0.0.1:54321`) and the
+`PUBLISHABLE_KEY` printed by `npx supabase status`. The seed creates `admin@wingsuit.test` and
+`organizer@wingsuit.test` with the password `local-dev-password`, for the local stack only.
+
+If `db:start` hangs while pulling images, Docker's keychain credential helper may be waiting. The
+images are public, so you can run it with an empty Docker config:
+`DOCKER_CONFIG=$(mktemp -d) npx supabase start`.
+
+## Supabase project setup (hosted)
+
+1. **Project settings**: keep **Data API** on, and turn **Automatically expose new tables** off. The
+   migration grants exactly what the app needs.
+2. **Schema**: open **SQL Editor**, paste the contents of
+   `supabase/migrations/20261012120000_initial_schema.sql`, and run it once.
+3. **Sign-ups off, email login on**: under **Authentication → Sign In / Providers**, turn off
+   **Allow new users to sign up**, but keep the **Email** provider enabled. Disabling the Email
+   provider would block password logins entirely.
+4. **URLs**: under **Authentication → URL Configuration**, set the Site URL to where the app is hosted,
+   and add `http://localhost:5173` to the redirect URLs for local use.
+5. **Create a user**: **Authentication → Users → Add user → Create new user**, with email, password
+   and **Auto Confirm User** ticked. Then give them a role in the SQL Editor:
+
+   ```sql
+   insert into public.user_roles (user_id, role, display_name)
+   select id, 'organizer', 'Pat Organizer' from auth.users where email = 'pat@example.com';
+   -- role is 'admin' or 'organizer'
+   ```
+
+6. **Reset a password** (there is no reset screen in the app):
+
+   ```sql
+   update auth.users
+      set encrypted_password = extensions.crypt('new-password-here', extensions.gen_salt('bf'))
+    where email = 'pat@example.com';
+   ```
+
+7. **Remove access**: `delete from public.user_roles where user_id = (select id from auth.users where email = '…');`
+   The account can still sign in but sees "No access yet". An organizer who still owns events can't
+   be deleted from Authentication until their events are deleted.
 
 **Hosting**: `client/dist` is a static site and can go on any static host (Netlify, Vercel,
 Cloudflare Pages, GitHub Pages). Configure the host to send every page path to `index.html`, so
@@ -118,4 +188,5 @@ Migrating to Tailwind 4 clears them.
 
 - The PDF uses built-in Helvetica, which covers Latin characters (for example `María`, `Zoë`) but
   not non-Latin scripts (Cyrillic, CJK). To support those, embed a Unicode TTF in `client/src/pdf/documents.ts`.
-- If the same event is edited in two browser tabs at once, the last write wins.
+- If two people edit the same event at the same moment, the last save wins (other screens see the
+  change after a page reload).

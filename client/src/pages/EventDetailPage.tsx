@@ -49,7 +49,7 @@ export function EventDetailPage() {
   const { getEvent, isOwner, deleteEvent, addSkydiver, updateSkydiver, removeSkydiver } = useEvents();
   const [modal, setModal] = useState<ModalState>(null);
   const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const event = getEvent(id);
   if (!event) {
@@ -58,32 +58,34 @@ export function EventDetailPage() {
   const owner = isOwner(event);
   const warnings = event.skydivers.filter((s) => membershipStatus(s.membershipExpiration, event) !== 'current').length;
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (
       window.confirm(
         `Delete "${event.name}", its ${event.skydivers.length} skydiver(s) and ${event.records.length} record(s)? This cannot be undone.`,
       )
     ) {
-      deleteEvent(event.id);
-      navigate('/');
+      const result = await deleteEvent(event.id);
+      if (result.ok) navigate('/');
+      else setActionError(result.errors.form ?? 'Could not delete the event.');
     }
   };
 
-  const handleRemove = (s: Skydiver) => {
+  const handleRemove = async (s: Skydiver) => {
     const inRecords = event.records.filter((r) => r.skydiverIds.includes(s.id)).length;
     const recordNote = inRecords ? ` They will also be removed from ${inRecords} record${inRecords === 1 ? '' : 's'}.` : '';
     if (window.confirm(`Remove #${s.jumperNumber} ${displayName(s)} from this event? Their jumper number will not be reused.${recordNote}`)) {
-      removeSkydiver(event.id, s.id);
+      const result = await removeSkydiver(event.id, s.id);
+      if (!result.ok) setActionError(result.errors.form ?? 'Could not remove the skydiver.');
     }
   };
 
   const handleExport = async () => {
     setExporting(true);
-    setExportError('');
+    setActionError('');
     try {
       await exportEventPdf(event);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'PDF export failed');
+      setActionError(err instanceof Error ? err.message : 'PDF export failed');
     } finally {
       setExporting(false);
     }
@@ -112,7 +114,7 @@ export function EventDetailPage() {
             )}
           </div>
         </div>
-        {exportError && <p role="alert" className="mt-2 text-sm text-red-600">{exportError}</p>}
+        {actionError && <p role="alert" className="mt-2 text-sm text-red-600">{actionError}</p>}
         {!owner && (
           <p className="mt-3 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
             View only — this event was created by another organizer profile.

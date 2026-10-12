@@ -101,11 +101,6 @@ export interface RecordEvent extends EventDetails {
   records: RecordEntry[];
 }
 
-export interface OrganizerProfile {
-  id: string;
-  name: string;
-}
-
 export type FieldErrors = Record<string, string>;
 
 export type OpResult = { ok: true; events: RecordEvent[]; id?: string } | { ok: false; errors: FieldErrors };

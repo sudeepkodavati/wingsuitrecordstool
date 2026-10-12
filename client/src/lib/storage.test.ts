@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { splitFullName } from './names';
-import { loadEvents, STORAGE_KEYS } from './storage';
+import { loadLegacyEvents as loadEvents, STORAGE_KEYS } from './storage';
 
 describe('splitFullName', () => {
   it('uses the last word as the last name', () => {
