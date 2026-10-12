@@ -2,7 +2,7 @@ import type { Viewpoint } from '../types';
 
 /**
  * Pictogram of where the formation is viewed from: an eye looking at the formation plane,
- * from above (top-down) or from behind (back-to-front). Mirrored in server/src/pdf.ts.
+ * from above (top-down) or from behind (back-to-front). Mirrored in pdf/documents.ts.
  */
 export function ViewpointIcon({ viewpoint, className = '' }: { viewpoint: Viewpoint; className?: string }) {
   return (

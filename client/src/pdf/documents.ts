@@ -1,8 +1,13 @@
-import PDFDocument from 'pdfkit';
-import { formatDate, formatDateRange, membershipStatus, sortByName, type MembershipStatus } from './roster';
-import type { ContactPayload, EventPayload, GridPayload, JudgePayload, RecordPayload, SkydiverPayload } from './schema';
-
-type Viewpoint = RecordPayload['viewpoint'];
+// Builds the roster and record PDFs in the browser. Loaded lazily (see lib/pdf.ts) because pdfkit
+// and its embedded fonts are large.
+import PDFDocument from 'pdfkit/js/pdfkit.standalone.js';
+import { formatDate, formatDateRange } from '../lib/dates';
+import { judgeRoleLabel } from '../lib/judges';
+import { membershipStatus, sortByName, type MembershipStatus } from '../lib/membership';
+import { isSequentialType, recordMembers, recordPdfTitle } from '../lib/records';
+import { formationIds, normalizeGrids } from '../lib/validation';
+import { VIEWPOINT_DESCRIPTIONS, VIEWPOINT_LABELS } from '../lib/viewpoint';
+import type { Contact, FormationGrid, Judge, RecordEntry, RecordEvent, Skydiver, Viewpoint } from '../types';
 
 const MARGIN = 50;
 const COLORS = {
@@ -55,17 +60,9 @@ const RECORD_COLUMNS: readonly Column[] = [
 ];
 const CELL_PAD = 4;
 
-const JUDGE_ROLE_LABELS: Record<JudgePayload['role'], string> = {
-  '': '',
-  regional: 'Regional Judge',
-  national: 'National Judge',
-  'dz-sta': 'DZ S&TA',
-  fai: 'FAI',
-};
-
-function contactText(c: ContactPayload | JudgePayload): string {
+function contactText(c: Contact | Judge): string {
   if (!c.name) return '—';
-  const role = 'role' in c ? JUDGE_ROLE_LABELS[c.role] : '';
+  const role = 'role' in c ? judgeRoleLabel(c.role) : '';
   return [role ? `${c.name} (${role})` : c.name, c.phone, c.email].filter(Boolean).join('  ·  ');
 }
 
@@ -76,7 +73,7 @@ const contentWidth = (doc: Doc) => doc.page.width - MARGIN * 2;
 const contentBottom = (doc: Doc) => doc.page.height - MARGIN - 20; // leave room for the footer
 
 /** Runs `draw` against a portrait Letter document and resolves with the finished PDF bytes. */
-function renderPdf(title: string, footerLabel: string, generatedAt: Date, draw: (doc: Doc) => void): Promise<Buffer> {
+function renderPdf(title: string, footerLabel: string, generatedAt: Date, draw: (doc: Doc) => void): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
       size: 'LETTER',
@@ -85,9 +82,9 @@ function renderPdf(title: string, footerLabel: string, generatedAt: Date, draw: 
       bufferPages: true,
       info: { Title: title, Subject: 'Wingsuit record event' },
     });
-    const chunks: Buffer[] = [];
-    doc.on('data', (c: Buffer) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    const chunks: Uint8Array[] = [];
+    doc.on('data', (c: Uint8Array) => chunks.push(c));
+    doc.on('end', () => resolve(concatBytes(chunks)));
     doc.on('error', reject);
     try {
       draw(doc);
@@ -97,6 +94,16 @@ function renderPdf(title: string, footerLabel: string, generatedAt: Date, draw: 
       reject(err);
     }
   });
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
 }
 
 function drawFooters(doc: Doc, label: string, generatedAt: Date) {
@@ -139,8 +146,8 @@ function warningNote(count: number): string {
 /** The skydiver table, sorted by first name, with the header repeated on each new page. */
 function drawSkydiverTable(
   doc: Doc,
-  skydivers: SkydiverPayload[],
-  event: EventPayload,
+  skydivers: Skydiver[],
+  event: RecordEvent,
   emptyText: string,
   columns: readonly Column[] = ROSTER_COLUMNS,
 ) {
@@ -148,7 +155,7 @@ function drawSkydiverTable(
   const width = contentWidth(doc);
   const rows = sortByName(skydivers).map((s) => ({
     s,
-    status: membershipStatus(s.membershipExpiration, event.startDate, event.endDate),
+    status: membershipStatus(s.membershipExpiration, event),
   }));
 
   const drawHeader = () => {
@@ -217,7 +224,7 @@ const ICON_COLOR: Record<MembershipStatus, string> = {
   expired: '#dc2626',
 };
 
-/** Same top-down wingsuit shape as client/src/components/WingsuitIcon.tsx, in a 100×100 box. */
+/** Same top-down wingsuit shape as components/WingsuitIcon.tsx, in a 100×100 box. */
 function drawWingsuitIcon(doc: Doc, x: number, y: number, size: number, number: number, color: string) {
   doc.save();
   doc.translate(x, y).scale(size / 100);
@@ -237,16 +244,7 @@ function drawWingsuitIcon(doc: Doc, x: number, y: number, size: number, number: 
   doc.text(label, x + size * 0.5 - textW / 2, y + size * 0.45 - fontSize * 0.36, { width: textW, align: 'center', lineBreak: false });
 }
 
-const VIEWPOINT_LABELS: Record<Viewpoint, string> = {
-  'top-down': 'Top-down view',
-  'back-to-front': 'Back-to-front view',
-};
-const VIEWPOINT_DESCRIPTIONS: Record<Viewpoint, string> = {
-  'top-down': 'Looking down on the formation from above.',
-  'back-to-front': 'Looking at the formation from behind, toward the front.',
-};
-
-/** Same pictogram as client/src/components/ViewpointIcon.tsx, in a 64×64 box. */
+/** Same pictogram as components/ViewpointIcon.tsx, in a 64×64 box. */
 function drawViewpointIcon(doc: Doc, x: number, y: number, size: number, viewpoint: Viewpoint) {
   const sky = '#0369a1';
   const skyLight = '#e0f2fe';
@@ -271,7 +269,6 @@ function drawViewpointIcon(doc: Doc, x: number, y: number, size: number, viewpoi
   doc.restore();
 }
 
-/** Square formation grid with its viewpoint. Moves to a new page when less than half a page is left. */
 /**
  * Draws a skydiver's full name centred in a grid cell, shrinking the font to fit and truncating
  * with an ellipsis when the cell is too small.
@@ -294,14 +291,15 @@ function drawNameInCell(doc: Doc, x: number, y: number, size: number, name: stri
 
 type GridMode = 'icons' | 'names';
 
+/** Square formation grid with its viewpoint. Moves to a new page when less than half a page is left. */
 function drawFormationGrid(
   doc: Doc,
   title: string,
   mode: GridMode,
-  grid: GridPayload,
+  grid: FormationGrid,
   viewpoint: Viewpoint,
-  placed: { s: SkydiverPayload; row: number; col: number }[],
-  event: EventPayload,
+  placed: { s: Skydiver; row: number; col: number }[],
+  event: RecordEvent,
 ) {
   const width = contentWidth(doc);
   if (contentBottom(doc) - doc.y < 300) {
@@ -345,7 +343,7 @@ function drawFormationGrid(
 
   const pad = cell * 0.06;
   for (const { s, row, col } of placed) {
-    const status = membershipStatus(s.membershipExpiration, event.startDate, event.endDate);
+    const status = membershipStatus(s.membershipExpiration, event);
     if (mode === 'icons') {
       drawWingsuitIcon(doc, x0 + col * cell + pad, y0 + row * cell + pad, cell - pad * 2, s.jumperNumber, ICON_COLOR[status]);
     } else {
@@ -357,7 +355,7 @@ function drawFormationGrid(
 }
 
 /** Event detail rows for the roster PDF. */
-function drawEventDetails(doc: Doc, event: EventPayload) {
+function drawEventDetails(doc: Doc, event: RecordEvent) {
   const location = [event.city, event.state].filter(Boolean).join(', ');
   const details: [string, string][] = [
     ['Drop Zone', event.dropZone || '—'],
@@ -372,11 +370,11 @@ function drawEventDetails(doc: Doc, event: EventPayload) {
   drawDetailRows(doc, details);
 }
 
-const countWarnings = (skydivers: SkydiverPayload[], event: EventPayload) =>
-  skydivers.filter((s) => membershipStatus(s.membershipExpiration, event.startDate, event.endDate) !== 'current').length;
+const countWarnings = (skydivers: Skydiver[], event: RecordEvent) =>
+  skydivers.filter((s) => membershipStatus(s.membershipExpiration, event) !== 'current').length;
 
 /** Renders the event's skydiver roster as a portrait Letter PDF. */
-export function buildRosterPdf(event: EventPayload, generatedAt = new Date()): Promise<Buffer> {
+export function buildRosterPdf(event: RecordEvent, generatedAt = new Date()): Promise<Uint8Array> {
   return renderPdf(`${event.name} — Skydiver Roster`, event.name, generatedAt, (doc) => {
     const width = contentWidth(doc);
     doc.fillColor(COLORS.text).font('Helvetica-Bold').fontSize(18).text(event.name, CONTENT_LEFT, MARGIN, { width });
@@ -429,7 +427,7 @@ function drawBadge(doc: Doc, x: number, y: number, label: string): number {
 }
 
 /** Judges one per line, each name followed by a role badge. Returns the bottom y. */
-function drawJudgeLines(doc: Doc, judges: JudgePayload[], x: number, y: number, width: number): number {
+function drawJudgeLines(doc: Doc, judges: Judge[], x: number, y: number, width: number): number {
   const named = judges.filter((j) => j.name);
   if (named.length === 0) {
     doc.font('Helvetica').fontSize(9.5).fillColor(COLORS.text).text('—', x, y, { width });
@@ -441,7 +439,7 @@ function drawJudgeLines(doc: Doc, judges: JudgePayload[], x: number, y: number, 
     doc.font('Helvetica').fontSize(9.5).fillColor(COLORS.text);
     const nameW = Math.min(doc.widthOfString(j.name), width - 90);
     doc.text(j.name, x, ly, { width: nameW + 1, lineBreak: false, ellipsis: true });
-    const role = JUDGE_ROLE_LABELS[j.role];
+    const role = judgeRoleLabel(j.role);
     if (role) drawBadge(doc, x + nameW + 6, ly - 1.5, role);
   });
   return y + named.length * lineH - 3;
@@ -453,32 +451,9 @@ function drawJudgeLines(doc: Doc, judges: JudgePayload[], x: number, y: number, 
  * table, a Videographers table, and the intended formation drawn with icons and with names —
  * once per point for sequential records.
  */
-export function recordMembers(event: EventPayload, record: RecordPayload) {
-  const onRecord = new Set(record.skydiverIds);
-  const members = event.skydivers.filter((s) => s.id && onRecord.has(s.id));
-  return {
-    participants: members.filter((s) => !s.isVideographer),
-    videographers: members.filter((s) => s.isVideographer),
-  };
-}
-
-/** "California: WS - Large Formation (No-grip) Vertical - 12 way" — the count excludes videographers. */
-export const isSequentialRecord = (record: Pick<RecordPayload, 'type'>) =>
-  record.type === 'ws-seq-lf-nogrip-horizontal' || record.type === 'ws-seq-lf-nogrip-vertical';
-
-/**
- * "California: WS - Large Formation (No-grip) Vertical - 12 way" — the count excludes videographers.
- * Sequential records also get the number of points: "… - 12 way - 3-points".
- */
-export function recordPdfTitle(event: EventPayload, record: RecordPayload): string {
-  const base = `${record.title} - ${recordMembers(event, record).participants.length} way`;
-  if (!isSequentialRecord(record)) return base;
-  const n = record.grids.length;
-  return `${base} - ${n}-point${n === 1 ? '' : 's'}`;
-}
-
-export function buildRecordPdf(event: EventPayload, record: RecordPayload, generatedAt = new Date()): Promise<Buffer> {
+export function buildRecordPdf(event: RecordEvent, record: RecordEntry, generatedAt = new Date()): Promise<Uint8Array> {
   const title = recordPdfTitle(event, record);
+  const grids = normalizeGrids(record.grids, record.type, formationIds(record.skydiverIds, event));
   return renderPdf(title, `${title}  ·  ${event.name}`, generatedAt, (doc) => {
     const width = contentWidth(doc);
     doc.fillColor(COLORS.text).font('Helvetica-Bold').fontSize(18).text(title, CONTENT_LEFT, MARGIN, { width });
@@ -511,14 +486,14 @@ export function buildRecordPdf(event: EventPayload, record: RecordPayload, gener
     drawSkydiverTable(doc, videographers, event, 'No videographers on this record.', RECORD_COLUMNS);
     doc.moveDown(1.5);
 
-    const placedOn = (grid: GridPayload) =>
+    const placedOn = (grid: FormationGrid) =>
       participants.flatMap((s) => {
         const p = grid.positions[s.id];
         return p && p.row < grid.size && p.col < grid.size ? [{ s, row: p.row, col: p.col }] : [];
       });
 
-    if (!isSequentialRecord(record)) {
-      const grid = record.grids[0];
+    if (!isSequentialType(record.type)) {
+      const grid = grids[0];
       drawFormationGrid(doc, 'Intended Formation', 'icons', grid, record.viewpoint, placedOn(grid), event);
       doc.moveDown(1);
       drawFormationGrid(doc, 'Intended Formation', 'names', grid, record.viewpoint, placedOn(grid), event);
@@ -532,7 +507,7 @@ export function buildRecordPdf(event: EventPayload, record: RecordPayload, gener
     }
     doc.font('Helvetica-Bold').fontSize(16).fillColor(COLORS.text).text('Intended Formation', CONTENT_LEFT, doc.y);
     doc.moveDown(0.4);
-    record.grids.forEach((grid, i) => {
+    grids.forEach((grid, i) => {
       const placed = placedOn(grid);
       if (i > 0) doc.moveDown(1);
       drawFormationGrid(doc, `Point #${i + 1}`, 'icons', grid, record.viewpoint, placed, event);

@@ -6,9 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: {
-      '/api': 'http://localhost:3001',
-    },
+  },
+  build: {
+    // The lazily loaded PDF chunk (pdfkit + embedded fonts) is ~1.5 MB by design.
+    chunkSizeWarningLimit: 1600,
   },
   test: {
     globals: true,

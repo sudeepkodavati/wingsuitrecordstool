@@ -71,20 +71,22 @@ Out of scope for now: login, database, non-USPA memberships.
 
 ## Architecture
 
+The whole app runs in the browser. There is no server.
+
 ```
 client/  React 18 + TypeScript + Tailwind (Vite)
   src/state/eventOps.ts     pure event/skydiver operations (ownership, validation, numbering)
   src/state/*Context.tsx    React state, persisted to browser localStorage
   src/lib/                  validation, membership status, dates, storage, PDF download
-server/  Node + Express + TypeScript
-  POST /api/events/pdf      validates the event (zod) and renders the roster PDF (pdfkit)
-  POST /api/records/pdf     renders one record's PDF (skydiver table + formation grid)
-  GET  /api/health
+  src/pdf/documents.ts      roster and record PDFs, drawn in the browser with pdfkit
 ```
 
 **Storage**: all data lives in the browser's `localStorage` (keys `wsr:v1:*`). It stays on that
-browser and device. Clearing site data erases it, and it is not shared between people. Because the
-server stores nothing, the client sends the full event to the server when it exports a PDF.
+browser and device. Clearing site data erases it, and it is not shared between people.
+
+**PDFs**: built in the browser with pdfkit's standalone build, which includes its fonts. That code
+is about 1.5 MB (about 420 KB compressed), so it is downloaded only the first time someone clicks
+Export or Print PDF; the first print takes a moment longer.
 
 ## Running
 
@@ -93,11 +95,16 @@ Requires Node 16.14 or newer. Dependencies are pinned to versions that support N
 
 ```bash
 npm install
-npm run dev        # client http://localhost:5173 (proxies /api) + server http://localhost:3001
-npm test           # server (vitest + supertest) and client (vitest + Testing Library)
+npm run dev        # http://localhost:5173
+npm test           # vitest + Testing Library (including the PDF builders)
 npm run typecheck
-npm run build && npm start   # production: server on :3001 serves the built client
+npm run build      # static site in client/dist
+npm run preview    # serve the production build locally
 ```
+
+**Hosting**: `client/dist` is a static site and can go on any static host (Netlify, Vercel,
+Cloudflare Pages, GitHub Pages). Configure the host to send every page path to `index.html`, so
+links like `/events/<id>` work on reload.
 
 ## Upgrading
 
@@ -109,5 +116,5 @@ user-supplied link targets).
 ## Known limitations
 
 - The PDF uses built-in Helvetica, which covers Latin characters (for example `María`, `Zoë`) but
-  not non-Latin scripts (Cyrillic, CJK). To support those, embed a Unicode TTF in `server/src/pdf.ts`.
+  not non-Latin scripts (Cyrillic, CJK). To support those, embed a Unicode TTF in `client/src/pdf/documents.ts`.
 - If the same event is edited in two browser tabs at once, the last write wins.

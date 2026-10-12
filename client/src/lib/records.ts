@@ -1,4 +1,4 @@
-import type { RecordEntry, RecordType, RecordZone } from '../types';
+import type { RecordEntry, RecordEvent, RecordType, RecordZone } from '../types';
 import { US_STATES } from './usStates';
 
 export const RECORD_ZONE_LABELS: Record<RecordZone, string> = {
@@ -43,3 +43,29 @@ export function isSequentialType(type: RecordEntry['type']): boolean {
 }
 
 export const MAX_POINTS = 20;
+
+/** The record's skydivers split into formation participants and videographers. */
+export function recordMembers(event: Pick<RecordEvent, 'skydivers'>, record: Pick<RecordEntry, 'skydiverIds'>) {
+  const onRecord = new Set(record.skydiverIds);
+  const members = event.skydivers.filter((s) => onRecord.has(s.id));
+  return {
+    participants: members.filter((s) => !s.isVideographer),
+    videographers: members.filter((s) => s.isVideographer),
+  };
+}
+
+/** Number of formation points the record prints: 1 unless sequential (matches normalizeGrids). */
+export function recordPointCount(record: Pick<RecordEntry, 'type' | 'grids'>): number {
+  return isSequentialType(record.type) ? Math.min(Math.max(record.grids.length, 1), MAX_POINTS) : 1;
+}
+
+/**
+ * Record PDF title: "California: WS - Large Formation (No-grip) Vertical - 12 way". The count
+ * excludes videographers. Sequential records add the number of points: "… - 12 way - 3-points".
+ */
+export function recordPdfTitle(event: Pick<RecordEvent, 'skydivers'>, record: RecordEntry): string {
+  const base = `${recordTitle(record)} - ${recordMembers(event, record).participants.length} way`;
+  if (!isSequentialType(record.type)) return base;
+  const n = recordPointCount(record);
+  return `${base} - ${n}-point${n === 1 ? '' : 's'}`;
+}

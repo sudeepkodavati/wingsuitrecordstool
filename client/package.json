@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "pdfkit": "^0.15.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.1"
@@ -20,6 +21,8 @@
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^14.3.1",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^16.18.126",
+    "@types/pdfkit": "^0.13.9",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.2.1",
