@@ -143,6 +143,66 @@ describe('App', () => {
     expect(stored[0].records[0]).toMatchObject({ zone: 'state', state: 'NV', type: 'ws-seq-lf-nogrip-vertical', viewpoint: 'top-down', attemptDate: '2026-10-11' });
   });
 
+  it('adds sequential points as exact copies, and duplicates a saved record', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await createProfileAndEvent(user);
+    await user.click(screen.getByRole('button', { name: '+ Add skydiver' }));
+    await addSkydiver(user, { name: 'Alex Aero', id: '100' });
+    await user.click(screen.getByRole('button', { name: 'Save & add another' }));
+    await addSkydiver(user, { name: 'Zoe Zephyr', id: '200' });
+    await user.click(screen.getByRole('button', { name: 'Add skydiver' }));
+
+    await user.click(screen.getByRole('link', { name: '+ New record' }));
+    await user.selectOptions(screen.getByLabelText(/Zone/), 'national');
+    await user.selectOptions(screen.getByLabelText(/Type/), 'ws-lf-grip');
+    await user.click(screen.getByRole('button', { name: /Select all/ }));
+    // Non-sequential: no points UI.
+    expect(screen.queryByRole('button', { name: '+ Add point' })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/Type/), 'ws-seq-lf-nogrip-horizontal');
+    expect(screen.getByRole('tab', { name: 'Point 1' })).toHaveAttribute('aria-selected', 'true');
+
+    // Move Alex (#1, starts in the last cell) on Point 1, then add Point 2: it copies Point 1 exactly.
+    await user.click(screen.getByRole('button', { name: /#1 Alex Aero/ }));
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
+    await user.click(screen.getByRole('button', { name: '+ Add point' }));
+    expect(screen.getByRole('tab', { name: 'Point 2' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
+
+    // Changing Point 2 leaves Point 1 alone.
+    await user.click(screen.getByRole('button', { name: /#1 Alex Aero/ }));
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
+    await user.click(screen.getByRole('tab', { name: 'Point 1' }));
+    expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
+
+    // Switching to a non-sequential type warns that extra points will be dropped.
+    await user.selectOptions(screen.getByLabelText(/Type/), 'ws-lf-grip');
+    expect(screen.getByText(/Only Point 1 will be kept/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/Type/), 'ws-seq-lf-nogrip-horizontal');
+    await user.click(screen.getByRole('button', { name: 'Create record' }));
+
+    expect(screen.getByText('2 points')).toBeInTheDocument();
+    let stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.events)!);
+    expect(stored[0].records[0].grids).toHaveLength(2);
+
+    // Duplicate opens a prefilled form; nothing is saved until Create.
+    await user.click(screen.getByRole('link', { name: /Duplicate WS - Sequential/ }));
+    expect(screen.getByRole('heading', { name: 'Duplicate record' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Type/)).toHaveValue('ws-seq-lf-nogrip-horizontal');
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    await user.click(screen.getByRole('tab', { name: 'Point 2' }));
+    expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
+    await user.click(screen.getByRole('button', { name: 'Create record' }));
+
+    stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.events)!);
+    expect(stored[0].records).toHaveLength(2);
+    expect(stored[0].records[1].id).not.toBe(stored[0].records[0].id);
+    expect(stored[0].records[1].grids).toEqual(stored[0].records[0].grids);
+  });
+
   it('marks videographers (unchecked by default) and leaves them off the grid', async () => {
     const user = userEvent.setup();
     renderApp();

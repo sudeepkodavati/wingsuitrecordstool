@@ -31,7 +31,7 @@ export const recordInput = (overrides: Partial<RecordInput> = {}): RecordInput =
   state: '',
   type: 'ws-lf-nogrip-vertical',
   skydiverIds: [],
-  grid: { size: 10, positions: {} },
+  grids: [{ size: 10, positions: {} }],
   viewpoint: 'top-down',
   attemptDate: '2026-10-11',
   ...overrides,

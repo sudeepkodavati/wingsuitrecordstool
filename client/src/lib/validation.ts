@@ -4,7 +4,7 @@ import { reconcileGrid } from './grid';
 import { displayName } from './names';
 import { LOCAL_JUDGE_ROLES, REMOTE_JUDGE_ROLES } from './judges';
 import { DEFAULT_VIEWPOINT, isViewpoint } from './viewpoint';
-import { RECORD_TYPES, RECORD_ZONES, recordTypeText, recordZoneText } from './records';
+import { isSequentialType, MAX_POINTS, RECORD_TYPES, RECORD_ZONES } from './records';
 import { US_STATES } from './usStates';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -118,6 +118,20 @@ export function formationIds(ids: string[], event: RecordEvent): string[] {
 }
 
 /**
+ * Always at least one point; non-sequential types keep only the first. Every point is reconciled
+ * with the record's formation skydivers.
+ */
+export function normalizeGrids(grids: RecordInput['grids'] | undefined, type: RecordInput['type'], ids: string[]) {
+  return reconcileGrids((grids ?? []).slice(0, isSequentialType(type) ? MAX_POINTS : 1), ids);
+}
+
+/** Reconciles every point (at least one) with the skydivers, without dropping any points. */
+export function reconcileGrids(grids: RecordInput['grids'] | undefined, ids: string[]) {
+  const list = grids && grids.length > 0 ? grids : [undefined];
+  return list.map((g) => reconcileGrid(g, ids));
+}
+
+/**
  * Clears the state unless the zone needs it, drops ids that aren't in the pool or are repeated,
  * and reconciles the formation grid with the remaining skydivers.
  */
@@ -129,14 +143,14 @@ export function normalizeRecord(input: RecordInput, event: RecordEvent): RecordI
     state: input.zone === 'state' ? input.state.trim() : '',
     type: input.type,
     skydiverIds,
-    grid: reconcileGrid(input.grid, formationIds(skydiverIds, event)),
+    grids: normalizeGrids(input.grids, input.type, formationIds(skydiverIds, event)),
     viewpoint: isViewpoint(input.viewpoint) ? input.viewpoint : DEFAULT_VIEWPOINT,
     attemptDate: (input.attemptDate ?? '').trim(),
   };
 }
 
-/** Expects normalized input. `excludeId` skips the record being edited in the duplicate check. */
-export function validateRecord(input: RecordInput, event: RecordEvent, excludeId?: string): FieldErrors {
+/** Expects normalized input. */
+export function validateRecord(input: RecordInput, event: RecordEvent): FieldErrors {
   const errors: FieldErrors = {};
   if (!input.zone) errors.zone = 'Select a zone';
   else if (!RECORD_ZONES.includes(input.zone)) errors.zone = 'Select a valid zone';
@@ -153,13 +167,6 @@ export function validateRecord(input: RecordInput, event: RecordEvent, excludeId
   else if (!isValidIsoDate(input.attemptDate)) errors.attemptDate = 'Enter a valid date';
   else if (!attemptInEventRange(input.attemptDate, event))
     errors.attemptDate = `Must be between ${formatDate(event.startDate)} and ${formatDate(event.endDate)}`;
-
-  if (Object.keys(errors).length === 0) {
-    const dup = event.records.find(
-      (r) => r.id !== excludeId && r.zone === input.zone && r.state === input.state && r.type === input.type,
-    );
-    if (dup) errors.type = `This event already has a ${recordZoneText(dup)} ${recordTypeText(dup.type)} record`;
-  }
   return errors;
 }
 

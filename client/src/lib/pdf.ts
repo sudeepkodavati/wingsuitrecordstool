@@ -1,7 +1,6 @@
 import type { RecordEntry, RecordEvent } from '../types';
-import { reconcileGrid } from './grid';
 import { recordTitle } from './records';
-import { formationIds } from './validation';
+import { formationIds, normalizeGrids } from './validation';
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'event';
@@ -44,10 +43,20 @@ export function exportEventPdf(event: RecordEvent): Promise<void> {
 /** Record PDF: title, the record's skydivers, and its formation grid (videographers excluded). */
 export function exportRecordPdf(event: RecordEvent, record: RecordEntry): Promise<void> {
   const title = recordTitle(record);
-  const grid = reconcileGrid(record.grid, formationIds(record.skydiverIds, event));
+  const grids = normalizeGrids(record.grids, record.type, formationIds(record.skydiverIds, event));
   return downloadPdf(
     '/api/records/pdf',
-    { event, record: { title, skydiverIds: record.skydiverIds, grid, viewpoint: record.viewpoint, attemptDate: record.attemptDate } },
+    {
+      event,
+      record: {
+        title,
+        type: record.type,
+        skydiverIds: record.skydiverIds,
+        grids,
+        viewpoint: record.viewpoint,
+        attemptDate: record.attemptDate,
+      },
+    },
     `${slugify(title)}.pdf`,
   );
 }

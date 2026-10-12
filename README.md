@@ -26,7 +26,13 @@ skydiver pool, and export the roster to PDF.
     (No-grip) Horizontal or Vertical, or WS - Large Formation (Grip).
   - **Skydivers**: picked from the event pool, with search and select-all. A skydiver can be on
     several records. Removing someone from the pool also removes them from that event's records.
-  - One event can't have two records with the same zone, state and type.
+  - **Duplicate** opens a new-record form prefilled from a saved record (including every formation
+    point). Nothing is saved until Create record, and an event can have several records with the
+    same zone, state and type.
+  - **Sequential formations**: the two *Sequential* types can have up to 20 formation points.
+    "+ Add point" copies the last point exactly, so you only move the skydivers who change. Points
+    can be removed, and all points share the record's skydivers and viewpoint. Other types keep a
+    single grid; switching away from a sequential type keeps only Point 1 when you save.
   - **Record attempt date**: required, and must fall within the event's start–end dates. It is
     prefilled with the start date. Record cards warn if a record has no attempt date (records saved
     before this field existed) or if the event dates later change and leave it outside the range.
@@ -52,6 +58,9 @@ skydiver pool, and export the roster to PDF.
       expiration, status).
     - Two grids titled **Intended Formation**: one with icons, one with full names in the cells.
       Both show the viewpoint.
+    - Sequential records: the title also ends with "- N-points" (or "- 1-point"). Under an
+      **Intended Formation** heading, each point is printed as **Point #1**, **Point #2**, … with an
+      icon grid and a names grid.
 - **PDF export**: portrait US Letter, with event details and the roster table, including membership
   status and page numbers.
 - **Organizer profiles** (no login): on first visit you enter your name. Events remember which

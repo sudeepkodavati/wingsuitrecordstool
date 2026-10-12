@@ -1,23 +1,27 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { reconcileGrid } from '../lib/grid';
 import { membershipStatus, sortByName } from '../lib/membership';
 import { displayName } from '../lib/names';
 import { exportRecordPdf } from '../lib/pdf';
-import { recordTitle, recordTypeText, recordZoneText } from '../lib/records';
+import { isSequentialType, recordTitle, recordTypeText, recordZoneText } from '../lib/records';
+import { VIEWPOINT_LABELS } from '../lib/viewpoint';
 import { formatDate } from '../lib/dates';
-import { attemptInEventRange, formationIds } from '../lib/validation';
+import { attemptInEventRange, formationIds, normalizeGrids } from '../lib/validation';
 import { useEvents } from '../state/EventsContext';
 import type { RecordEntry, RecordEvent } from '../types';
 import { FormationGridEditor } from './FormationGridEditor';
 import { MembershipBadge } from './MembershipBadge';
 import { VideographerBadge } from './VideographerBadge';
+import { ViewpointIcon } from './ViewpointIcon';
 
 function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: RecordEntry; canEdit: boolean }) {
   const { deleteRecord } = useEvents();
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState('');
   const byId = new Map(event.skydivers.map((s) => [s.id, s]));
+  const formation = formationIds(record.skydiverIds, event);
+  const points = normalizeGrids(record.grids, record.type, formation);
+  const sequential = isSequentialType(record.type);
   const members = sortByName(record.skydiverIds.flatMap((id) => byId.get(id) ?? []));
   const warnings = members.filter((s) => membershipStatus(s.membershipExpiration, event) !== 'current').length;
   const title = recordTypeText(record.type);
@@ -65,6 +69,11 @@ function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: Re
               {members.length} skydiver{members.length === 1 ? '' : 's'}
               {videographers > 0 && ` (incl. ${videographers} videographer${videographers === 1 ? '' : 's'})`}
             </span>
+            {sequential && (
+              <span className="text-slate-600">
+                {points.length} point{points.length === 1 ? '' : 's'}
+              </span>
+            )}
             {warnings > 0 && <span className="text-amber-700">⚠ {warnings} membership warning{warnings === 1 ? '' : 's'}</span>}
           </div>
         </div>
@@ -83,6 +92,13 @@ function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: Re
               <Link to={`/events/${event.id}/records/${record.id}/edit`} className="text-sky-700 hover:underline" aria-label={`Edit ${title}`}>
                 Edit
               </Link>
+              <Link
+                to={`/events/${event.id}/records/new?from=${record.id}`}
+                className="text-sky-700 hover:underline"
+                aria-label={`Duplicate ${title}`}
+              >
+                Duplicate
+              </Link>
               <button type="button" className="text-red-600 hover:underline" onClick={handleDelete} aria-label={`Delete ${title}`}>
                 Delete
               </button>
@@ -93,16 +109,29 @@ function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: Re
       {printError && <p role="alert" className="mt-2 text-sm text-red-600">{printError}</p>}
       {flyers > 0 && (
         <details className="mt-2 text-sm">
-          <summary className="cursor-pointer select-none text-slate-600 hover:text-slate-900">Show formation</summary>
-          <div className="mt-3 max-w-md">
-            <FormationGridEditor
-              event={event}
-              grid={reconcileGrid(record.grid, formationIds(record.skydiverIds, event))}
-              skydiverIds={formationIds(record.skydiverIds, event)}
-              viewpoint={record.viewpoint}
-              readOnly
-            />
-          </div>
+          <summary className="cursor-pointer select-none text-slate-600 hover:text-slate-900">
+            Show formation{sequential && points.length > 1 ? ` (${points.length} points)` : ''}
+          </summary>
+          {sequential ? (
+            <div className="mt-3">
+              <div className="mb-3 flex items-center gap-2 text-slate-700">
+                <ViewpointIcon viewpoint={record.viewpoint} className="h-7 w-7" />
+                <span className="font-medium">{VIEWPOINT_LABELS[record.viewpoint]}</span>
+              </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                {points.map((g, i) => (
+                  <div key={i}>
+                    <h4 className="mb-1.5 font-medium text-slate-900">Point {i + 1}</h4>
+                    <FormationGridEditor event={event} grid={g} skydiverIds={formation} readOnly />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 max-w-md">
+              <FormationGridEditor event={event} grid={points[0]} skydiverIds={formation} viewpoint={record.viewpoint} readOnly />
+            </div>
+          )}
         </details>
       )}
       {members.length > 0 && (

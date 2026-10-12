@@ -36,3 +36,10 @@ export function recordTitle(r: Pick<RecordEntry, 'zone' | 'state' | 'type'>): st
   const zone = r.zone === 'state' ? stateName(r.state) : r.zone ? RECORD_ZONE_LABELS[r.zone] : '';
   return `${zone}: ${recordTypeText(r.type)}`;
 }
+
+/** Sequential record types can have several formation points (grids). */
+export function isSequentialType(type: RecordEntry['type']): boolean {
+  return type === 'ws-seq-lf-nogrip-horizontal' || type === 'ws-seq-lf-nogrip-vertical';
+}
+
+export const MAX_POINTS = 20;

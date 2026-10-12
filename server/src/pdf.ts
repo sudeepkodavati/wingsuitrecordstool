@@ -106,11 +106,15 @@ function drawFooters(doc: Doc, label: string, generatedAt: Date) {
     doc.switchToPage(i);
     const savedBottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0; // allow writing below the content area without auto-paging
+    const footer = `${label}  ·  Generated ${stamp}  ·  Page ${i + 1} of ${range.count}`;
+    // Shrink long footers (long record titles) so they stay on one line.
+    let size = 8;
+    doc.font('Helvetica');
+    while (size > 5.5 && doc.fontSize(size).widthOfString(footer) > contentWidth(doc)) size -= 0.5;
     doc
-      .font('Helvetica')
-      .fontSize(8)
+      .fontSize(size)
       .fillColor(COLORS.muted)
-      .text(`${label}  ·  Generated ${stamp}  ·  Page ${i + 1} of ${range.count}`, CONTENT_LEFT, doc.page.height - MARGIN + 10, {
+      .text(footer, CONTENT_LEFT, doc.page.height - MARGIN + 10, {
         width: contentWidth(doc),
         align: 'center',
         lineBreak: false,
@@ -444,10 +448,10 @@ function drawJudgeLines(doc: Doc, judges: JudgePayload[], x: number, y: number, 
 }
 
 /**
- * One record: titled "Zone: Type - N way" (or "State name: Type - N way"), with the organizer,
- * attempt date and judges (with role badges),
- * a Participants table, a Videographers table, and the intended formation drawn twice —
- * once with icons and once with names.
+ * One record: titled "Zone: Type - N way" (or "State name: Type - N way"; sequential records add
+ * "- N-points"), with the organizer, attempt date and judges (with role badges), a Participants
+ * table, a Videographers table, and the intended formation drawn with icons and with names —
+ * once per point for sequential records.
  */
 export function recordMembers(event: EventPayload, record: RecordPayload) {
   const onRecord = new Set(record.skydiverIds);
@@ -459,8 +463,18 @@ export function recordMembers(event: EventPayload, record: RecordPayload) {
 }
 
 /** "California: WS - Large Formation (No-grip) Vertical - 12 way" — the count excludes videographers. */
+export const isSequentialRecord = (record: Pick<RecordPayload, 'type'>) =>
+  record.type === 'ws-seq-lf-nogrip-horizontal' || record.type === 'ws-seq-lf-nogrip-vertical';
+
+/**
+ * "California: WS - Large Formation (No-grip) Vertical - 12 way" — the count excludes videographers.
+ * Sequential records also get the number of points: "… - 12 way - 3-points".
+ */
 export function recordPdfTitle(event: EventPayload, record: RecordPayload): string {
-  return `${record.title} - ${recordMembers(event, record).participants.length} way`;
+  const base = `${record.title} - ${recordMembers(event, record).participants.length} way`;
+  if (!isSequentialRecord(record)) return base;
+  const n = record.grids.length;
+  return `${base} - ${n}-point${n === 1 ? '' : 's'}`;
 }
 
 export function buildRecordPdf(event: EventPayload, record: RecordPayload, generatedAt = new Date()): Promise<Buffer> {
@@ -497,12 +511,33 @@ export function buildRecordPdf(event: EventPayload, record: RecordPayload, gener
     drawSkydiverTable(doc, videographers, event, 'No videographers on this record.', RECORD_COLUMNS);
     doc.moveDown(1.5);
 
-    const placed = participants.flatMap((s) => {
-      const p = record.grid.positions[s.id];
-      return p && p.row < record.grid.size && p.col < record.grid.size ? [{ s, row: p.row, col: p.col }] : [];
+    const placedOn = (grid: GridPayload) =>
+      participants.flatMap((s) => {
+        const p = grid.positions[s.id];
+        return p && p.row < grid.size && p.col < grid.size ? [{ s, row: p.row, col: p.col }] : [];
+      });
+
+    if (!isSequentialRecord(record)) {
+      const grid = record.grids[0];
+      drawFormationGrid(doc, 'Intended Formation', 'icons', grid, record.viewpoint, placedOn(grid), event);
+      doc.moveDown(1);
+      drawFormationGrid(doc, 'Intended Formation', 'names', grid, record.viewpoint, placedOn(grid), event);
+      return;
+    }
+
+    // Sequential: an "Intended Formation" heading, then each point as an icon grid and a names grid.
+    if (contentBottom(doc) - doc.y < 330) {
+      doc.addPage();
+      doc.y = MARGIN;
+    }
+    doc.font('Helvetica-Bold').fontSize(16).fillColor(COLORS.text).text('Intended Formation', CONTENT_LEFT, doc.y);
+    doc.moveDown(0.4);
+    record.grids.forEach((grid, i) => {
+      const placed = placedOn(grid);
+      if (i > 0) doc.moveDown(1);
+      drawFormationGrid(doc, `Point #${i + 1}`, 'icons', grid, record.viewpoint, placed, event);
+      doc.moveDown(1);
+      drawFormationGrid(doc, `Point #${i + 1}`, 'names', grid, record.viewpoint, placed, event);
     });
-    drawFormationGrid(doc, 'Intended Formation', 'icons', record.grid, record.viewpoint, placed, event);
-    doc.moveDown(1);
-    drawFormationGrid(doc, 'Intended Formation', 'names', record.grid, record.viewpoint, placed, event);
   });
 }

@@ -25,6 +25,15 @@ describe('loadEvents migration', () => {
     expect(loadEvents()[0].records[0]).toMatchObject({ viewpoint: 'top-down', attemptDate: '' });
   });
 
+  it('turns a legacy single grid into a one-point list', () => {
+    const grid = { size: 6, positions: { s1: { row: 1, col: 2 } } };
+    const legacy = [{ id: 'e1', skydivers: [], records: [{ id: 'r1', zone: 'national', type: 'ws-lf-grip', grid }] }];
+    window.localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(legacy));
+    const record = loadEvents()[0].records[0] as unknown as Record<string, unknown>;
+    expect(record.grids).toEqual([grid]);
+    expect(record.grid).toBeUndefined();
+  });
+
   it('leaves current skydivers alone', () => {
     const current = [{ id: 'e1', records: [], skydivers: [{ id: 's1', firstName: 'A', lastName: 'B', isVideographer: true }] }];
     window.localStorage.setItem(STORAGE_KEYS.events, JSON.stringify(current));

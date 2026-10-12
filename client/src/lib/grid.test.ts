@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampGridSize, minGridSize, moveInGrid, reconcileGrid } from './grid';
+import { clampGridSize, cloneGrid, minGridSize, moveInGrid, reconcileGrid } from './grid';
 
 describe('grid sizing', () => {
   it('needs a square big enough for everyone, at least 2 × 2', () => {
@@ -69,5 +69,15 @@ describe('moveInGrid', () => {
   it('ignores moves off the grid', () => {
     expect(moveInGrid(base, 'a', { row: -1, col: 0 })).toBe(base);
     expect(moveInGrid(base, 'a', { row: 0, col: 3 })).toBe(base);
+  });
+});
+
+describe('cloneGrid', () => {
+  it('copies positions exactly without sharing objects', () => {
+    const g = { size: 4, positions: { a: { row: 1, col: 2 } } };
+    const c = cloneGrid(g);
+    expect(c).toEqual(g);
+    c.positions.a.row = 3;
+    expect(g.positions.a.row).toBe(1);
   });
 });

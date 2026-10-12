@@ -121,9 +121,12 @@ export function removeSkydiver(events: RecordEvent[], eventId: string, skydiverI
 }
 
 function withoutSkydiver(r: RecordEntry, skydiverId: string): RecordEntry {
-  const positions = { ...r.grid?.positions };
-  delete positions[skydiverId];
-  return { ...r, skydiverIds: r.skydiverIds.filter((id) => id !== skydiverId), grid: { ...r.grid, positions } };
+  const grids = r.grids.map((g) => {
+    const positions = { ...g.positions };
+    delete positions[skydiverId];
+    return { ...g, positions };
+  });
+  return { ...r, skydiverIds: r.skydiverIds.filter((id) => id !== skydiverId), grids };
 }
 
 export function addRecord(events: RecordEvent[], eventId: string, input: RecordInput, actorId: string): OpResult {
@@ -149,7 +152,7 @@ export function updateRecord(
   return withOwnedEvent(events, eventId, actorId, (event) => {
     if (!event.records.some((r) => r.id === recordId)) return { ok: false, errors: { form: 'Record not found' } };
     const clean = normalizeRecord(input, event);
-    const errors = validateRecord(clean, event, recordId);
+    const errors = validateRecord(clean, event);
     if (hasErrors(errors)) return { ok: false, errors };
     const ts = now();
     return {

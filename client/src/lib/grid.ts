@@ -70,3 +70,11 @@ export function moveInGrid(grid: FormationGrid, id: string, to: GridPosition): F
   if (occupant) positions[occupant] = { ...from };
   return { ...grid, positions };
 }
+
+/** Deep copy, so editing the copy never changes the original (used when adding a point). */
+export function cloneGrid(grid: FormationGrid): FormationGrid {
+  return {
+    size: grid.size,
+    positions: Object.fromEntries(Object.entries(grid.positions).map(([id, p]) => [id, { ...p }])),
+  };
+}

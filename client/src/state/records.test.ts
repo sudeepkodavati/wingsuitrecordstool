@@ -58,16 +58,14 @@ describe('records', () => {
     expect(ev[0].records[0].skydiverIds).toEqual([a.id]);
   });
 
-  it('blocks a duplicate zone + state + type in the same event', () => {
+  it('allows several records with the same zone, state and type (e.g. duplicates)', () => {
     const { events, eventId } = setup();
     const ev = unwrap(ops.addRecord(events, eventId, recordInput({ zone: 'state', state: 'CA' }), OWNER));
-    expect(errorsOf(ops.addRecord(ev, eventId, recordInput({ zone: 'state', state: 'CA' }), OWNER)).type).toMatch(/already has/);
-    // Different state or type is fine.
-    expect(ops.addRecord(ev, eventId, recordInput({ zone: 'state', state: 'NV' }), OWNER).ok).toBe(true);
-    expect(ops.addRecord(ev, eventId, recordInput({ zone: 'state', state: 'CA', type: 'ws-lf-grip' }), OWNER).ok).toBe(true);
+    const again = unwrap(ops.addRecord(ev, eventId, recordInput({ zone: 'state', state: 'CA' }), OWNER));
+    expect(again[0].records).toHaveLength(2);
   });
 
-  it('updates a record without tripping its own duplicate check', () => {
+  it('updates a record', () => {
     const { events, eventId, a } = setup();
     let ev = unwrap(ops.addRecord(events, eventId, recordInput(), OWNER));
     const id = ev[0].records[0].id;
@@ -85,15 +83,43 @@ describe('records', () => {
   it('saves the formation grid and fills in positions for every skydiver', () => {
     const { events, eventId, a, b } = setup();
     const grid = { size: 6, positions: { [b.id]: { row: 3, col: 3 } } };
-    const ev = unwrap(ops.addRecord(events, eventId, recordInput({ skydiverIds: [a.id, b.id], grid }), OWNER));
-    expect(ev[0].records[0].grid).toEqual({ size: 6, positions: { [b.id]: { row: 3, col: 3 }, [a.id]: { row: 5, col: 5 } } });
+    const ev = unwrap(ops.addRecord(events, eventId, recordInput({ skydiverIds: [a.id, b.id], grids: [grid] }), OWNER));
+    expect(ev[0].records[0].grids).toEqual([{ size: 6, positions: { [b.id]: { row: 3, col: 3 }, [a.id]: { row: 5, col: 5 } } }]);
   });
 
-  it('removing a skydiver from the pool clears their grid cell', () => {
+  it('removing a skydiver from the pool clears their cell on every point', () => {
     const { events, eventId, a, b } = setup();
-    let ev = unwrap(ops.addRecord(events, eventId, recordInput({ skydiverIds: [a.id, b.id] }), OWNER));
+    const grids = [{ size: 4, positions: {} }, { size: 4, positions: {} }];
+    let ev = unwrap(ops.addRecord(events, eventId, recordInput({ type: 'ws-seq-lf-nogrip-vertical', skydiverIds: [a.id, b.id], grids }), OWNER));
     ev = unwrap(ops.removeSkydiver(ev, eventId, a.id, OWNER));
-    expect(Object.keys(ev[0].records[0].grid.positions)).toEqual([b.id]);
+    expect(ev[0].records[0].grids.map((g) => Object.keys(g.positions))).toEqual([[b.id], [b.id]]);
+  });
+
+  it('keeps every point for sequential types, each reconciled with the skydivers', () => {
+    const { events, eventId, a, b } = setup();
+    const grids = [
+      { size: 5, positions: { [a.id]: { row: 0, col: 0 } } },
+      { size: 5, positions: { [a.id]: { row: 2, col: 2 } } },
+      { size: 5, positions: {} },
+    ];
+    const ev = unwrap(ops.addRecord(events, eventId, recordInput({ type: 'ws-seq-lf-nogrip-horizontal', skydiverIds: [a.id, b.id], grids }), OWNER));
+    const saved = ev[0].records[0].grids;
+    expect(saved).toHaveLength(3);
+    expect(saved[1].positions[a.id]).toEqual({ row: 2, col: 2 });
+    expect(saved.every((g) => g.positions[b.id])).toBe(true);
+  });
+
+  it('keeps only the first point for non-sequential types', () => {
+    const { events, eventId, a } = setup();
+    const grids = [{ size: 5, positions: { [a.id]: { row: 1, col: 1 } } }, { size: 5, positions: {} }];
+    const ev = unwrap(ops.addRecord(events, eventId, recordInput({ type: 'ws-lf-grip', skydiverIds: [a.id], grids }), OWNER));
+    expect(ev[0].records[0].grids).toEqual([{ size: 5, positions: { [a.id]: { row: 1, col: 1 } } }]);
+  });
+
+  it('always saves at least one point', () => {
+    const { events, eventId } = setup();
+    const ev = unwrap(ops.addRecord(events, eventId, recordInput({ grids: [] }), OWNER));
+    expect(ev[0].records[0].grids).toHaveLength(1);
   });
 
   it('keeps videographers on the record but off the formation grid', () => {
@@ -105,7 +131,7 @@ describe('records', () => {
     ev = unwrap(ops.addRecord(ev, eventId, recordInput({ skydiverIds: [a.id, v.id] }), OWNER));
     const record = ev[0].records[0];
     expect(record.skydiverIds).toEqual([a.id, v.id]);
-    expect(Object.keys(record.grid.positions)).toEqual([a.id]);
+    expect(Object.keys(record.grids[0].positions)).toEqual([a.id]);
   });
 
   it('saves the viewpoint and falls back to top-down for bad values', () => {

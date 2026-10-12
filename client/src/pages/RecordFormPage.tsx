@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Field, TextField } from '../components/FormField';
 import { formatDateRange } from '../lib/dates';
 import { FormationGridEditor } from '../components/FormationGridEditor';
 import { SkydiverPicker } from '../components/SkydiverPicker';
-import { DEFAULT_GRID_SIZE, reconcileGrid } from '../lib/grid';
-import { RECORD_TYPE_LABELS, RECORD_TYPES, RECORD_ZONE_LABELS, RECORD_ZONES } from '../lib/records';
+import { cloneGrid } from '../lib/grid';
+import { isSequentialType, MAX_POINTS, RECORD_TYPE_LABELS, RECORD_TYPES, RECORD_ZONE_LABELS, RECORD_ZONES, recordTitle } from '../lib/records';
 import { US_STATES } from '../lib/usStates';
-import { formationIds } from '../lib/validation';
+import { formationIds, normalizeGrids, reconcileGrids } from '../lib/validation';
 import { useEvents } from '../state/EventsContext';
 import { suggestedViewpoint, VIEWPOINT_DESCRIPTIONS, VIEWPOINT_LABELS, VIEWPOINTS } from '../lib/viewpoint';
 import type { FieldErrors, RecordInput, RecordType, RecordZone } from '../types';
@@ -19,26 +19,31 @@ export function RecordFormPage() {
   const { getEvent, isOwner, addRecord, updateRecord } = useEvents();
   const event = getEvent(id);
   const existing = recordId ? event?.records.find((r) => r.id === recordId) : undefined;
+  // "Duplicate" opens this form as a new record prefilled from ?from=<recordId>.
+  const [search] = useSearchParams();
+  const fromId = !recordId ? search.get('from') : null;
+  const source = existing ?? (fromId ? event?.records.find((r) => r.id === fromId) : undefined);
 
   const [values, setValues] = useState<RecordInput>(() =>
-    existing && event
+    source && event
       ? {
-          zone: existing.zone,
-          state: existing.state,
-          type: existing.type,
-          skydiverIds: existing.skydiverIds,
-          // Records saved before the grid existed get a default layout.
-          grid: reconcileGrid(existing.grid, formationIds(existing.skydiverIds, event)),
-          viewpoint: existing.viewpoint,
-          attemptDate: existing.attemptDate,
+          zone: source.zone,
+          state: source.state,
+          type: source.type,
+          skydiverIds: [...source.skydiverIds],
+          // Older records may have no grid yet; copies get their own grid objects.
+          grids: normalizeGrids(source.grids, source.type, formationIds(source.skydiverIds, event)).map(cloneGrid),
+          viewpoint: source.viewpoint,
+          attemptDate: source.attemptDate,
         }
-      : { zone: '', state: '', type: '', skydiverIds: [], grid: { size: DEFAULT_GRID_SIZE, positions: {} }, viewpoint: 'top-down', attemptDate: event?.startDate ?? '' },
+      : { zone: '', state: '', type: '', skydiverIds: [], grids: normalizeGrids([], '', []), viewpoint: 'top-down', attemptDate: event?.startDate ?? '' },
   );
   // Until the organizer picks a viewpoint, follow the record type (vertical → back-to-front).
-  const [viewpointChosen, setViewpointChosen] = useState(Boolean(existing));
+  const [viewpointChosen, setViewpointChosen] = useState(Boolean(source));
+  const [activePoint, setActivePoint] = useState(0);
   const [errors, setErrors] = useState<FieldErrors>({});
 
-  if (!event || (recordId && !existing)) {
+  if (!event || (recordId && !existing) || (fromId && !source)) {
     return <p className="text-slate-700">{event ? 'Record' : 'Event'} not found. <Link to={event ? `/events/${event.id}` : '/'} className="text-sky-700 underline">Go back</Link></p>;
   }
   if (!isOwner(event)) {
@@ -54,8 +59,30 @@ export function RecordFormPage() {
   const orderedIds = formationIds(values.skydiverIds, event);
   const videographerCount = values.skydiverIds.length - orderedIds.length;
 
+  const sequential = isSequentialType(values.type);
+  const extraPointsDropped = !sequential && values.grids.length > 1;
+  const visibleGrids = sequential ? values.grids : values.grids.slice(0, 1);
+  const point = Math.min(activePoint, visibleGrids.length - 1);
+
+  // Keep every point in step with the selected skydivers. Extra points are only trimmed on save,
+  // so switching the type back to sequential doesn't lose them.
   const setSkydivers = (skydiverIds: string[]) =>
-    setValues((v) => ({ ...v, skydiverIds, grid: reconcileGrid(v.grid, formationIds(skydiverIds, event)) }));
+    setValues((v) => ({ ...v, skydiverIds, grids: reconcileGrids(v.grids, formationIds(skydiverIds, event)) }));
+
+  const setGrid = (index: number, grid: RecordInput['grids'][number]) =>
+    setValues((v) => ({ ...v, grids: v.grids.map((g, i) => (i === index ? grid : g)) }));
+
+  /** New point = exact copy of the last one, appended at the end. */
+  const addPoint = () => {
+    setValues((v) => ({ ...v, grids: [...v.grids, cloneGrid(v.grids[v.grids.length - 1])] }));
+    setActivePoint(values.grids.length);
+  };
+
+  const removePoint = (index: number) => {
+    if (!window.confirm(`Remove Point ${index + 1}? Its layout will be lost.`)) return;
+    setValues((v) => ({ ...v, grids: v.grids.filter((_, i) => i !== index) }));
+    setActivePoint(Math.max(0, index - 1));
+  };
 
   const setZone = (zone: RecordZone | '') =>
     // Default the state to the event's own state the first time "State" is chosen.
@@ -75,7 +102,14 @@ export function RecordFormPage() {
     <form onSubmit={handleSubmit} noValidate className="mx-auto max-w-3xl space-y-5">
       <div>
         <Link to={backTo} className="text-sm text-sky-700 hover:underline">← {event.name}</Link>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{existing ? 'Edit record' : 'New record'}</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-slate-900">
+          {existing ? 'Edit record' : source ? 'Duplicate record' : 'New record'}
+        </h1>
+        {!existing && source && (
+          <p className="mt-1 text-sm text-slate-600">
+            Copy of <span className="font-medium">{recordTitle(source)}</span>. Nothing is saved until you click Create record.
+          </p>
+        )}
       </div>
 
       {Object.keys(errors).length > 0 && (
@@ -158,7 +192,7 @@ export function RecordFormPage() {
       </section>
 
       <section className="card p-5" aria-labelledby="formation-heading">
-        <h2 id="formation-heading" className="font-semibold text-slate-900">Formation grid</h2>
+        <h2 id="formation-heading" className="font-semibold text-slate-900">{sequential ? 'Formation points' : 'Formation grid'}</h2>
         {orderedIds.length === 0 ? (
           <p className="mt-3 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
             {videographerCount > 0
@@ -204,12 +238,53 @@ export function RecordFormPage() {
                 })}
               </div>
             </fieldset>
+            {extraPointsDropped && (
+              <p role="status" className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                ⚠ This record type has a single formation. Only Point 1 will be kept when you save
+                ({values.grids.length - 1} other point{values.grids.length === 2 ? '' : 's'} will be removed).
+              </p>
+            )}
+            {sequential && (
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <div role="tablist" aria-label="Formation points" className="flex flex-wrap gap-1">
+                  {visibleGrids.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      role="tab"
+                      aria-selected={i === point}
+                      onClick={() => setActivePoint(i)}
+                      className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                        i === point ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      Point {i + 1}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary py-1.5"
+                  onClick={addPoint}
+                  disabled={values.grids.length >= MAX_POINTS}
+                  title={`Copies Point ${values.grids.length} exactly`}
+                >
+                  + Add point
+                </button>
+                {visibleGrids.length > 1 && (
+                  <button type="button" className="ml-auto text-sm text-red-600 hover:underline" onClick={() => removePoint(point)}>
+                    Remove Point {point + 1}
+                  </button>
+                )}
+              </div>
+            )}
             <FormationGridEditor
+              key={point}
               event={event}
-              grid={values.grid}
+              grid={visibleGrids[point]}
               skydiverIds={orderedIds}
               viewpoint={values.viewpoint}
-              onChange={(grid) => setValues((v) => ({ ...v, grid }))}
+              onChange={(grid) => setGrid(point, grid)}
             />
           </>
         )}

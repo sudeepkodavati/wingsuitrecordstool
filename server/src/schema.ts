@@ -62,11 +62,19 @@ export const recordPdfSchema = z.object({
   record: z.object({
     /** "Zone: Type" or "State name: Type", built by the client. */
     title: z.string().trim().min(1).max(300),
+    /** Record type code; sequential types print each grid as a numbered point. */
+    type: z.string().max(60).default(''),
     skydiverIds: z.array(z.string().max(100)).max(2000).default([]),
-    grid: z.object({
-      size: z.number().int().min(1).max(100),
-      positions: z.record(gridPosition).default({}),
-    }),
+    /** Formation points in order (a single grid for non-sequential records). */
+    grids: z
+      .array(
+        z.object({
+          size: z.number().int().min(1).max(100),
+          positions: z.record(gridPosition).default({}),
+        }),
+      )
+      .min(1)
+      .max(50),
     viewpoint: z.enum(['top-down', 'back-to-front']).default('top-down'),
     // Empty for records saved before attempt dates existed.
     attemptDate: z.union([isoDate, z.literal('')]).default(''),
@@ -74,4 +82,4 @@ export const recordPdfSchema = z.object({
 });
 
 export type RecordPayload = z.infer<typeof recordPdfSchema>['record'];
-export type GridPayload = RecordPayload['grid'];
+export type GridPayload = RecordPayload['grids'][number];

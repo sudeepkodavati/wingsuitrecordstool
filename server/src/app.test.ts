@@ -131,7 +131,7 @@ describe('POST /api/records/pdf', () => {
   const record = {
     title: 'California: WS - Large Formation (No-grip) Vertical',
     skydiverIds: ['s1', 's2', 'v1'],
-    grid: { size: 10, positions: { s1: { row: 9, col: 9 }, s2: { row: 9, col: 8 } } },
+    grids: [{ size: 10, positions: { s1: { row: 9, col: 9 }, s2: { row: 9, col: 8 } } }],
   };
 
   async function recordPdf(body: unknown) {
@@ -157,12 +157,12 @@ describe('POST /api/records/pdf', () => {
   });
 
   it('handles an empty record and a large grid', async () => {
-    const res = await recordPdf({ event, record: { ...record, skydiverIds: [], grid: { size: 30, positions: {} } } });
+    const res = await recordPdf({ event, record: { ...record, skydiverIds: [], grids: [{ size: 30, positions: {} }] } });
     expect(res.status).toBe(200);
   });
 
   it('ignores positions outside the grid', async () => {
-    const res = await recordPdf({ event, record: { ...record, grid: { size: 2, positions: { s1: { row: 5, col: 5 } } } } });
+    const res = await recordPdf({ event, record: { ...record, grids: [{ size: 2, positions: { s1: { row: 5, col: 5 } } }] } });
     expect(res.status).toBe(200);
   });
 
@@ -185,7 +185,7 @@ describe('POST /api/records/pdf', () => {
 
   it('renders a names grid with very long names and a 30 × 30 grid', async () => {
     const long = { ...event, skydivers: event.skydivers.map((s) => ({ ...s, firstName: 'Maximilian-Alexander', lastName: 'Vanderbilt-Featherstonehaugh' })) };
-    const res = await recordPdf({ event: long, record: { ...record, grid: { size: 30, positions: { s1: { row: 29, col: 29 }, s2: { row: 0, col: 0 } } } } });
+    const res = await recordPdf({ event: long, record: { ...record, grids: [{ size: 30, positions: { s1: { row: 29, col: 29 }, s2: { row: 0, col: 0 } } }] } });
     expect(res.status).toBe(200);
   });
 
@@ -207,6 +207,28 @@ describe('POST /api/records/pdf', () => {
     expect((await recordPdf({ event: { ...event, localJudge: undefined, remoteJudges: [] }, record })).status).toBe(200);
   });
 
+  it('appends the point count for sequential records only', async () => {
+    const seq = {
+      ...record,
+      type: 'ws-seq-lf-nogrip-vertical',
+      grids: [record.grids[0], record.grids[0], record.grids[0]],
+    };
+    const res = await recordPdf({ event, record: seq });
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toBe(
+      'attachment; filename="california-ws-large-formation-no-grip-vertical-2-way-3-points.pdf"',
+    );
+    const one = await recordPdf({ event, record: { ...seq, grids: [record.grids[0]] } });
+    expect(one.headers['content-disposition']).toMatch(/-2-way-1-point\.pdf"$/);
+    const nonSeq = await recordPdf({ event, record: { ...record, type: 'ws-lf-grip' } });
+    expect(nonSeq.headers['content-disposition']).toMatch(/-2-way\.pdf"$/);
+  });
+
+  it('rejects a record with no grids', async () => {
+    const res = await request(app).post('/api/records/pdf').send({ event, record: { ...record, grids: [] } });
+    expect(res.status).toBe(400);
+  });
+
   it('rejects a record without a title', async () => {
     const res = await request(app).post('/api/records/pdf').send({ event, record: { ...record, title: '' } });
     expect(res.status).toBe(400);
@@ -214,7 +236,7 @@ describe('POST /api/records/pdf', () => {
   });
 
   it('rejects negative grid positions', async () => {
-    const bad = { ...record, grid: { size: 3, positions: { s1: { row: -1, col: 0 } } } };
+    const bad = { ...record, grids: [{ size: 3, positions: { s1: { row: -1, col: 0 } } }] };
     const res = await request(app).post('/api/records/pdf').send({ event, record: bad });
     expect(res.status).toBe(400);
   });

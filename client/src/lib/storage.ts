@@ -1,4 +1,4 @@
-import type { OrganizerProfile, RecordEvent, Skydiver } from '../types';
+import type { FormationGrid, OrganizerProfile, RecordEntry, RecordEvent, Skydiver } from '../types';
 import { splitFullName } from './names';
 import { DEFAULT_VIEWPOINT, isViewpoint } from './viewpoint';
 
@@ -41,8 +41,10 @@ function migrateSkydiver(s: LegacySkydiver): Skydiver {
 export const loadEvents = () =>
   read<RecordEvent[]>(STORAGE_KEYS.events, [], Array.isArray).map((e) => ({
     ...e,
-    records: (e.records ?? []).map((r) => ({
+    records: (e.records ?? []).map(({ grid, ...r }: RecordEntry & { grid?: FormationGrid }) => ({
       ...r,
+      // Records saved before sequential points had a single `grid`.
+      grids: Array.isArray(r.grids) && r.grids.length > 0 ? r.grids : grid ? [grid] : [],
       viewpoint: isViewpoint(r.viewpoint) ? r.viewpoint : DEFAULT_VIEWPOINT,
       attemptDate: typeof r.attemptDate === 'string' ? r.attemptDate : '',
     })),

@@ -76,7 +76,8 @@ export interface RecordInput {
   type: RecordType | '';
   /** Skydiver ids from the event pool. */
   skydiverIds: string[];
-  grid: FormationGrid;
+  /** Formation points in order. Only sequential record types may have more than one. */
+  grids: FormationGrid[];
   viewpoint: Viewpoint;
   /** YYYY-MM-DD, within the event's dates. Empty on records saved before this field existed. */
   attemptDate: string;
