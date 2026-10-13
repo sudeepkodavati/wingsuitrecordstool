@@ -1,3 +1,5 @@
+import { newId } from '../lib/ids';
+import { toSharedEvent } from '../lib/share';
 import * as ops from '../state/eventOps';
 import type { OpResult, RecordEvent } from '../types';
 import { StoreError, type EventStore } from './store';
@@ -72,6 +74,17 @@ export function createMemoryStore(actorId: string, initial: RecordEvent[] = []):
         imported++;
       }
       return { imported, skipped };
+    },
+    async setEventSharing(eventId, enabled) {
+      const e = event(eventId);
+      if (e.createdBy !== actorId) throw new StoreError('Only the organizer who created this event can share it');
+      const token = enabled ? newId() : null;
+      events = events.map((x) => (x.id === eventId ? { ...x, shareToken: token } : x));
+      return token;
+    },
+    async getSharedEvent(token) {
+      const e = events.find((x) => x.shareToken && x.shareToken === token);
+      return e ? toSharedEvent(clone(e)) : null;
     },
   };
 }

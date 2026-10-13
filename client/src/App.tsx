@@ -4,11 +4,14 @@ import { EventDetailPage } from './pages/EventDetailPage';
 import { EventFormPage } from './pages/EventFormPage';
 import { EventsPage } from './pages/EventsPage';
 import { RecordFormPage } from './pages/RecordFormPage';
+import { SharePage } from './pages/SharePage';
 
 /** Routes only; auth and data providers are supplied by main.tsx (or by tests). */
 export function App() {
   return (
     <Routes>
+      {/* Public participant view: no login. */}
+      <Route path="share/:token" element={<SharePage />} />
       <Route element={<Layout />}>
         <Route index element={<EventsPage />} />
         <Route path="events/new" element={<EventFormPage />} />

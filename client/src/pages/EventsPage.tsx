@@ -34,11 +34,18 @@ export function EventsPage() {
                 <Link to={`/events/${e.id}`} className="card block h-full p-5 transition hover:border-sky-300 hover:shadow">
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="font-semibold text-slate-900">{e.name}</h2>
-                    {isMine(e) && (
-                      <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-600/20">
-                        Yours
-                      </span>
-                    )}
+                    <div className="flex shrink-0 gap-1.5">
+                      {e.shareToken && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                          Shared
+                        </span>
+                      )}
+                      {isMine(e) && (
+                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-600/20">
+                          Yours
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="mt-1 text-sm text-slate-600">
                     {e.dropZone} · {e.city}, {e.state}

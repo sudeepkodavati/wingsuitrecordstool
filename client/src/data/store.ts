@@ -1,3 +1,4 @@
+import type { SharedEvent } from '../lib/share';
 import type { EventDetails, FieldErrors, RecordEntry, RecordEvent, RecordInput, Skydiver, SkydiverInput } from '../types';
 
 /** A failed store call. `fieldErrors` maps onto form fields (e.g. a duplicate USPA ID). */
@@ -35,4 +36,8 @@ export interface EventStore {
   deleteRecord(eventId: string, recordId: string): Promise<void>;
   /** One-time import of events saved in this browser before sign-in existed. */
   importEvents(events: RecordEvent[]): Promise<ImportResult>;
+  /** Turns the participant share link on (always a fresh token) or off. Returns the token or null. */
+  setEventSharing(eventId: string, enabled: boolean): Promise<string | null>;
+  /** The participant view for a share token, or null if it isn't valid. Works without signing in. */
+  getSharedEvent(token: string): Promise<SharedEvent | null>;
 }

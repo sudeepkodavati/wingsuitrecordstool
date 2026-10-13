@@ -351,4 +351,95 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: '+ New record' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export PDF' })).toBeInTheDocument();
   });
+
+  describe('share links', () => {
+    const sharedEvent = (): RecordEvent => ({
+      ...eventDetails({
+        name: 'Shared Record Event',
+        localJudge: { name: 'Sam Safety', phone: '555-0111', email: 'sam@example.com', role: 'dz-sta' },
+        notes: 'Private notes',
+      }),
+      id: 'e-shared',
+      createdBy: USER_ID,
+      createdAt: '',
+      updatedAt: '',
+      nextJumperNumber: 3,
+      shareToken: 'tok-123',
+      skydivers: [
+        { id: 's1', jumperNumber: 1, firstName: 'Alex', lastName: 'Aero', nickName: 'Ace', uspaMembershipId: '987654', membershipExpiration: '2020-01-01', uspaLicenseNumber: 'D-4242', isVideographer: false, addedAt: '' },
+        { id: 's2', jumperNumber: 2, firstName: 'Vic', lastName: 'Video', nickName: '', uspaMembershipId: '123123', membershipExpiration: '2027-01-01', uspaLicenseNumber: '', isVideographer: true, addedAt: '' },
+      ],
+      records: [
+        {
+          id: 'r1',
+          zone: 'national',
+          state: '',
+          type: 'ws-seq-lf-nogrip-vertical',
+          attemptDate: '2026-10-11',
+          viewpoint: 'back-to-front',
+          skydiverIds: ['s1', 's2'],
+          grids: [{ size: 4, positions: { s1: { row: 3, col: 3 } } }, { size: 4, positions: { s1: { row: 0, col: 0 } } }],
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    });
+
+    it('owners create, replace and stop a participant link', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const event = { ...sharedEvent(), shareToken: null };
+      const store = renderApp('/events/e-shared', { events: [event] });
+
+      await user.click(await screen.findByRole('button', { name: 'Create share link' }));
+      const link = await screen.findByRole('textbox', { name: 'Participant link' });
+      const first = (link as HTMLInputElement).value;
+      expect(first).toMatch(/\/share\/.+/);
+      expect(store.snapshot()[0].shareToken).toBe(first.split('/share/')[1]);
+
+      await user.click(screen.getByRole('button', { name: 'New link' }));
+      await screen.findByDisplayValue((v) => v.includes('/share/') && v !== first);
+
+      await user.click(screen.getByRole('button', { name: 'Stop sharing' }));
+      expect(await screen.findByRole('button', { name: 'Create share link' })).toBeInTheDocument();
+      expect(store.snapshot()[0].shareToken).toBeNull();
+      vi.restoreAllMocks();
+    });
+
+    it('participants see a read-only view without signing in, with no personal details or PDFs', async () => {
+      renderApp('/share/tok-123', { auth: { status: 'signed-out', role: null, userId: null }, events: [sharedEvent()] });
+      expect(await screen.findByRole('heading', { name: 'Shared Record Event' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument();
+
+      // Judge name and role, record and formation are shown.
+      expect(screen.getByText('Sam Safety')).toBeInTheDocument();
+      expect(screen.getByText('DZ S&TA')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'WS - Sequential Large Formation (No-grip) Vertical' })).toBeInTheDocument();
+      expect(screen.getByText('Point 2')).toBeInTheDocument();
+      expect(screen.getAllByRole('grid')).toHaveLength(2);
+      expect(screen.getAllByText('Alex Aero').length).toBeGreaterThan(0);
+
+      // Nothing private, nothing editable, no PDFs, no membership warnings.
+      const text = document.body.textContent ?? '';
+      for (const secret of ['987654', 'D-4242', '555-0111', 'sam@example.com', 'Private notes', 'Ace']) {
+        expect(text).not.toContain(secret);
+      }
+      expect(screen.queryByText(/Expired/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /PDF/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Edit|Duplicate/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Delete|Remove|Add/ })).not.toBeInTheDocument();
+    });
+
+    it('a stopped or unknown link explains itself', async () => {
+      renderApp('/share/not-a-real-token', { auth: { status: 'signed-out', role: null, userId: null }, events: [sharedEvent()] });
+      expect(await screen.findByRole('heading', { name: "This link isn't active" })).toBeInTheDocument();
+    });
+
+    it('marks shared events in the events list', async () => {
+      renderApp('/', { events: [sharedEvent()] });
+      const card = await screen.findByRole('link', { name: /Shared Record Event/ });
+      expect(within(card).getByText('Shared')).toBeInTheDocument();
+      expect(within(card).getByText('Yours')).toBeInTheDocument();
+    });
+  });
 });

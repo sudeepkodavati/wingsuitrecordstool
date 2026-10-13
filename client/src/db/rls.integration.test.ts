@@ -243,3 +243,94 @@ describe('losing a role', () => {
     expect((await users.orgB.client.from('events').select('id').eq('id', ev.id)).data).toHaveLength(1);
   });
 });
+
+describe('share links', () => {
+  async function sharedSetup() {
+    const c = users.orgA.client;
+    const ev = await createEvent(c, 'Shared event');
+    await c.from('events').update({
+      local_judge: { name: 'Sam Safety', phone: '555-0111', email: 'sam@example.com', role: 'dz-sta' },
+      remote_judges: [{ name: 'Remy Remote', phone: '', email: 'remy@example.com', role: 'national' }],
+      notes: 'Private organizer notes',
+    }).eq('id', ev.id);
+    const a = (await c.from('skydivers').insert(newSkydiver(ev.id, 1, { uspa_license_number: 'D-1' })).select().single()).data!;
+    const v = (await c.from('skydivers').insert(newSkydiver(ev.id, 2, { is_videographer: true })).select().single()).data!;
+    await c.from('records').insert({
+      event_id: ev.id,
+      zone: 'state',
+      state: 'CA',
+      type: 'ws-lf-grip',
+      skydiver_ids: [a.id, v.id],
+      grids: [{ size: 10, positions: { [a.id]: { row: 9, col: 9 } } }],
+      attempt_date: '2026-10-21',
+    });
+    return { ev, a, v };
+  }
+
+  const share = (client: SupabaseClient, eventId: string, enabled: boolean) =>
+    client.rpc('set_event_sharing', { p_event_id: eventId, p_enabled: enabled });
+
+  it('lets anonymous visitors read a shared event without any personal details', async () => {
+    const { ev, a } = await sharedSetup();
+    const { data: token, error } = await share(users.orgA.client, ev.id, true);
+    expect(error).toBeNull();
+
+    const { data, error: readError } = await anon.rpc('get_shared_event', { p_token: token });
+    expect(readError).toBeNull();
+    expect(data.event).toMatchObject({
+      name: 'Shared event',
+      organizerName: 'Org',
+      localJudge: { name: 'Sam Safety', role: 'dz-sta' },
+      remoteJudges: [{ name: 'Remy Remote', role: 'national' }],
+    });
+    expect(data.skydivers[0]).toEqual({ id: a.id, jumperNumber: 1, firstName: 'First1', lastName: 'Last1', isVideographer: false });
+    expect(data.skydivers[1].isVideographer).toBe(true);
+    expect(data.records[0]).toMatchObject({ zone: 'state', state: 'CA', type: 'ws-lf-grip', attemptDate: '2026-10-21' });
+    expect(data.records[0].grids[0].positions[a.id]).toEqual({ row: 9, col: 9 });
+
+    const json = JSON.stringify(data);
+    for (const secret of ['1001', 'D-1', '2027-06-30', '555', '@example.com', 'Private organizer notes']) {
+      expect(json).not.toContain(secret);
+    }
+  });
+
+  it('a stopped or replaced link no longer works', async () => {
+    const { ev } = await sharedSetup();
+    const first = (await share(users.orgA.client, ev.id, true)).data;
+    const second = (await share(users.orgA.client, ev.id, true)).data;
+    expect(second).not.toBe(first);
+    expect((await anon.rpc('get_shared_event', { p_token: first })).data).toBeNull();
+    expect((await anon.rpc('get_shared_event', { p_token: second })).data).not.toBeNull();
+
+    const off = await share(users.orgA.client, ev.id, false);
+    expect(off.data).toBeNull();
+    expect((await anon.rpc('get_shared_event', { p_token: second })).data).toBeNull();
+  });
+
+  it('unknown and malformed tokens return nothing', async () => {
+    expect((await anon.rpc('get_shared_event', { p_token: crypto.randomUUID() })).data).toBeNull();
+    const garbage = await anon.rpc('get_shared_event', { p_token: "x' or 1=1 --" });
+    expect(garbage.error).toBeNull();
+    expect(garbage.data).toBeNull();
+  });
+
+  it('only the owner or an admin can change sharing; anonymous visitors cannot', async () => {
+    const { ev } = await sharedSetup();
+    expect((await share(users.orgB.client, ev.id, true)).error).not.toBeNull();
+    expect((await share(anon, ev.id, true)).error).not.toBeNull();
+    expect((await share(users.admin.client, ev.id, true)).error).toBeNull();
+  });
+
+  it('sharing does not open the tables to anonymous visitors', async () => {
+    const { ev } = await sharedSetup();
+    await share(users.orgA.client, ev.id, true);
+    expect((await anon.from('events').select('id').eq('id', ev.id)).error).not.toBeNull();
+    expect((await anon.from('skydivers').select('id').eq('event_id', ev.id)).error).not.toBeNull();
+  });
+
+  it('share_token cannot be written directly', async () => {
+    const { ev } = await sharedSetup();
+    const { error } = await users.orgA.client.from('events').update({ share_token: crypto.randomUUID() }).eq('id', ev.id);
+    expect(error).not.toBeNull();
+  });
+});

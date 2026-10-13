@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { RecordsSection } from '../components/RecordsSection';
+import { SharePanel } from '../components/SharePanel';
 import { SkydiverForm } from '../components/SkydiverForm';
 import { SkydiverTable } from '../components/SkydiverTable';
 import { formatDateRange } from '../lib/dates';
@@ -121,6 +122,8 @@ export function EventDetailPage() {
           </p>
         )}
       </div>
+
+      {owner && <SharePanel event={event} />}
 
       <section className="card p-5">
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">

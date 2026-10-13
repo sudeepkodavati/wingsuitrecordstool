@@ -1,13 +1,14 @@
 import type { PostgrestError } from '@supabase/supabase-js';
 import { newId } from '../lib/ids';
 import { getSupabase } from '../lib/supabase';
+import type { SharedEvent } from '../lib/share';
 import type { EventDetails, RecordEntry, RecordEvent, RecordInput, Skydiver, SkydiverInput } from '../types';
 import { StoreError, type EventStore, type ImportResult } from './store';
 
 // ---- Row shapes (snake_case columns) and mapping to the app's types ----
 
 const EVENT_COLUMNS =
-  'id, created_by, name, drop_zone, city, state, start_date, end_date, aircraft, organizer, local_judge, remote_judges, notes, next_jumper_number, created_at, updated_at';
+  'id, created_by, name, drop_zone, city, state, start_date, end_date, aircraft, organizer, local_judge, remote_judges, notes, next_jumper_number, share_token, created_at, updated_at';
 const SKYDIVER_COLUMNS =
   'id, event_id, jumper_number, first_name, last_name, nick_name, uspa_membership_id, membership_expiration, uspa_license_number, is_videographer, added_at';
 const RECORD_COLUMNS =
@@ -28,6 +29,7 @@ type EventRow = {
   remote_judges: RecordEvent['remoteJudges'];
   notes: string;
   next_jumper_number: number;
+  share_token: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -75,6 +77,7 @@ const toEvent = (r: EventRow): RecordEvent => ({
   remoteJudges: r.remote_judges ?? [],
   notes: r.notes,
   nextJumperNumber: r.next_jumper_number,
+  shareToken: r.share_token,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   skydivers: [],
@@ -302,6 +305,18 @@ export function createSupabaseStore(): EventStore {
         result.imported++;
       }
       return result;
+    },
+
+    async setEventSharing(eventId, enabled) {
+      const { data, error } = await db().rpc('set_event_sharing', { p_event_id: eventId, p_enabled: enabled });
+      if (error) throw toStoreError(error, 'Could not change sharing for this event.');
+      return (data as string | null) ?? null;
+    },
+
+    async getSharedEvent(token) {
+      const { data, error } = await db().rpc('get_shared_event', { p_token: token });
+      if (error) throw toStoreError(error, 'Could not load this shared event.');
+      return (data as SharedEvent | null) ?? null;
     },
   };
 }

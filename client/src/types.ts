@@ -97,6 +97,8 @@ export interface RecordEvent extends EventDetails {
   createdAt: string;
   updatedAt: string;
   nextJumperNumber: number;
+  /** Set while the event has an active participant share link. */
+  shareToken?: string | null;
   skydivers: Skydiver[];
   records: RecordEntry[];
 }

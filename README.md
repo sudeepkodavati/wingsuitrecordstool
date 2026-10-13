@@ -72,7 +72,19 @@ skydiver pool, and export the roster to PDF.
 - **One-time import**: events saved in a browser before sign-in existed (localStorage) can be
   imported into the signed-in account, keeping jumper numbers, record skydivers and formation points.
 
-Out of scope for now: a judge role, participant share links, non-USPA memberships.
+- **Participant share links**: an event's owner (or an admin) can create a read-only link from the
+  event page. Anyone with the link can open `/share/<token>` without signing in, and sees:
+  - the event name, place and dates,
+  - the organizer's name, and the judges' names and roles,
+  - each record: type, zone, attempt date, participants, videographers, and every formation point
+    with its viewpoint,
+  - skydiver names and jumper numbers.
+
+  It never shows USPA IDs, licenses, membership dates or status, phone numbers, emails or notes, and
+  it has no PDF or edit buttons. **New link** replaces the token, so old links stop working, and
+  **Stop sharing** turns the link off.
+
+Out of scope for now: a judge role, non-USPA memberships.
 
 ## Architecture
 
@@ -93,9 +105,11 @@ supabase/
 ```
 
 **Database**: `user_roles`, `events`, `skydivers`, `records` (formation points stored as JSON).
-Row level security limits every row to admins or the event's creator; anonymous visitors get no
-table access. The database also assigns jumper numbers (never reused), rejects duplicate USPA IDs
-within an event, and removes a deleted skydiver from every record and formation point.
+Row level security limits every row to admins or the event's creator. Anonymous visitors get no
+table access: the only thing they can call is `get_shared_event(token)`, which returns the
+participant subset of a shared event. The database also assigns jumper numbers (never reused),
+rejects duplicate USPA IDs within an event, and removes a deleted skydiver from every record and
+formation point.
 
 **PDFs**: built in the browser with pdfkit's standalone build, which includes its fonts. That code
 is about 1.5 MB (about 420 KB compressed), so it is downloaded only the first time someone clicks
@@ -145,8 +159,9 @@ images are public, so you can run it with an empty Docker config:
 
 1. **Project settings**: keep **Data API** on, and turn **Automatically expose new tables** off. The
    migration grants exactly what the app needs.
-2. **Schema**: open **SQL Editor**, paste the contents of
-   `supabase/migrations/20261012120000_initial_schema.sql`, and run it once.
+2. **Schema**: in the **SQL Editor**, run each file in `supabase/migrations/` once, in order:
+   1. `20261012120000_initial_schema.sql`: tables, roles and row level security.
+   2. `20261013090000_share_links.sql`: participant share links.
 3. **Sign-ups off, email login on**: under **Authentication → Sign In / Providers**, turn off
    **Allow new users to sign up**, but keep the **Email** provider enabled. Disabling the Email
    provider would block password logins entirely.

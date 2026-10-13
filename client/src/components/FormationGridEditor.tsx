@@ -16,6 +16,8 @@ interface Props {
   readOnly?: boolean;
   /** Shown as an icon and label above the grid. */
   viewpoint?: Viewpoint;
+  /** Hide membership colours/labels (participant share view). */
+  neutral?: boolean;
 }
 
 const DRAG_TYPE = 'application/x-wsr-skydiver';
@@ -29,10 +31,12 @@ interface GridIconProps {
   onSelect: () => void;
   onKeyDown: (e: KeyboardEvent, s: Skydiver) => void;
   onDragEnd: () => void;
+  /** Don't colour or label by membership status (the share view has no membership data). */
+  neutral: boolean;
 }
 
-function GridIcon({ s, event, selected, editable, onSelect, onKeyDown, onDragEnd }: GridIconProps) {
-  const status = membershipStatus(s.membershipExpiration, event);
+function GridIcon({ s, event, selected, editable, onSelect, onKeyDown, onDragEnd, neutral }: GridIconProps) {
+  const status = neutral ? 'current' : membershipStatus(s.membershipExpiration, event);
   const name = `#${s.jumperNumber} ${displayName(s)}${s.nickName ? ` “${s.nickName}”` : ''}`;
   const color = status === 'expired' ? 'text-red-600' : status === 'expires-during-event' ? 'text-amber-500' : 'text-sky-700';
   return (
@@ -70,7 +74,7 @@ function GridIcon({ s, event, selected, editable, onSelect, onKeyDown, onDragEnd
   );
 }
 
-export function FormationGridEditor({ event, grid, skydiverIds, onChange, readOnly = false, viewpoint }: Props) {
+export function FormationGridEditor({ event, grid, skydiverIds, onChange, readOnly = false, viewpoint, neutral = false }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [sizeDraft, setSizeDraft] = useState(String(grid.size));
@@ -181,6 +185,7 @@ export function FormationGridEditor({ event, grid, skydiverIds, onChange, readOn
               onKeyDown={handleIconKey}
               onSelect={() => handleCellClick(pos, s)}
               onDragEnd={() => setDragOver(null)}
+              neutral={neutral}
             />
           )}
         </div>,

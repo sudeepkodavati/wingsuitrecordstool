@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { StoreError, type EventStore, type ImportResult } from '../data/store';
+import type { SharedEvent } from '../lib/share';
 import {
   normalizeEventDetails,
   normalizeRecord,
@@ -34,6 +35,10 @@ interface EventsContextValue {
   updateRecord: (eventId: string, recordId: string, input: RecordInput) => Promise<ActionResult>;
   deleteRecord: (eventId: string, recordId: string) => Promise<ActionResult>;
   importEvents: (events: RecordEvent[]) => Promise<ImportResult>;
+  /** Turn the participant link on (fresh token, returned as `id`) or off. */
+  setSharing: (eventId: string, enabled: boolean) => Promise<ActionResult>;
+  /** Public: the participant view for a share token (null if invalid). */
+  loadSharedEvent: (token: string) => Promise<SharedEvent | null>;
 }
 
 const EventsContext = createContext<EventsContextValue | null>(null);
@@ -186,6 +191,15 @@ export function EventsProvider({ store, children }: { store: EventStore; childre
           await store.deleteRecord(eventId, recordId);
           patchEvent(eventId, (e) => ({ ...e, records: e.records.filter((r) => r.id !== recordId) }));
         }),
+
+      setSharing: (eventId, enabled) =>
+        attempt(async () => {
+          const token = await store.setEventSharing(eventId, enabled);
+          patchEvent(eventId, (e) => ({ ...e, shareToken: token }));
+          return token ?? undefined;
+        }),
+
+      loadSharedEvent: (token) => store.getSharedEvent(token),
 
       importEvents: async (incoming) => {
         const result = await store.importEvents(incoming);
