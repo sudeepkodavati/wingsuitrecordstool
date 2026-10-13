@@ -130,7 +130,7 @@ npm run build        # static site in client/dist
 npm run preview      # serve the production build locally
 ```
 
-`client/.env.local` (not committed; see `client/.env.example`):
+`client/.env.local` (not committed):
 
 ```
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
