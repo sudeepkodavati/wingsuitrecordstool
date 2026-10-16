@@ -222,13 +222,23 @@ describe('App', () => {
     await user.keyboard('{ArrowUp}');
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
     await user.click(screen.getByRole('button', { name: '+ Add point' }));
-    expect(screen.getByRole('tab', { name: 'Point 2' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /^Point 2/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
+    // A fresh copy fails the 75% rule: nobody has moved yet, and the tab is flagged.
+    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 0 of 2 moved (0%)');
+    expect(screen.getByRole('tab', { name: 'Point 2 (needs changes)' })).toBeInTheDocument();
 
     // Changing Point 2 leaves Point 1 alone.
     await user.click(screen.getByRole('button', { name: /#1 Alex Aero/ }));
     await user.keyboard('{ArrowLeft}');
     expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
+    // One of two moved is 50%: still short of 75%.
+    expect(screen.getByTestId('point-transitions')).toHaveTextContent('1 of 2 moved (50%)');
+    await user.keyboard('{Escape}'); // deselect Alex, otherwise clicking Zoe swaps them
+    await user.click(screen.getByRole('button', { name: /#2 Zoe Zephyr/ }));
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 2 of 2 moved (100%)');
+    expect(screen.getByRole('tab', { name: 'Point 2' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Point 1' }));
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
 
@@ -239,6 +249,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Create record' }));
 
     expect(screen.getByText('2 points')).toBeInTheDocument();
+    expect(screen.getByText('✓ Point changes OK')).toBeInTheDocument();
     let stored = store.snapshot();
     expect(stored[0].records[0].grids).toHaveLength(2);
 

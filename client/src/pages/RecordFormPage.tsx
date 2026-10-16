@@ -3,10 +3,12 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Field, TextField } from '../components/FormField';
 import { formatDateRange } from '../lib/dates';
 import { FormationGridEditor } from '../components/FormationGridEditor';
+import { PointTransitions } from '../components/PointTransitions';
 import { SkydiverPicker } from '../components/SkydiverPicker';
 import { cloneGrid } from '../lib/grid';
 import { isSequentialType, MAX_POINTS, RECORD_TYPE_LABELS, RECORD_TYPES, RECORD_ZONE_LABELS, RECORD_ZONES, recordTitle } from '../lib/records';
 import { US_STATES } from '../lib/usStates';
+import { pointTransitions } from '../lib/sequence';
 import { formationIds, normalizeGrids, reconcileGrids } from '../lib/validation';
 import { useEvents } from '../state/EventsContext';
 import { suggestedViewpoint, VIEWPOINT_DESCRIPTIONS, VIEWPOINT_LABELS, VIEWPOINTS } from '../lib/viewpoint';
@@ -64,6 +66,7 @@ export function RecordFormPage() {
   const extraPointsDropped = !sequential && values.grids.length > 1;
   const visibleGrids = sequential ? values.grids : values.grids.slice(0, 1);
   const point = Math.min(activePoint, visibleGrids.length - 1);
+  const transitions = sequential ? pointTransitions(visibleGrids, orderedIds) : [];
 
   // Keep every point in step with the selected skydivers. Extra points are only trimmed on save,
   // so switching the type back to sequential doesn't lose them.
@@ -262,6 +265,15 @@ export function RecordFormPage() {
                       }`}
                     >
                       Point {i + 1}
+                      {i > 0 && transitions[i - 1] && !transitions[i - 1].passes && (
+                        <>
+                          {' '}
+                          <span title="Fewer than 75% moved from the previous point">
+                            <span aria-hidden="true">⚠</span>
+                            <span className="sr-only">(needs changes)</span>
+                          </span>
+                        </>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -279,6 +291,11 @@ export function RecordFormPage() {
                     Remove Point {point + 1}
                   </button>
                 )}
+              </div>
+            )}
+            {transitions.length > 0 && (
+              <div className="mb-4">
+                <PointTransitions transitions={transitions} />
               </div>
             )}
             <FormationGridEditor

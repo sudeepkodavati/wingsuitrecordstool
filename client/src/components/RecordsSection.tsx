@@ -4,12 +4,14 @@ import { membershipStatus, sortByName } from '../lib/membership';
 import { displayName } from '../lib/names';
 import { exportRecordPdf } from '../lib/pdf';
 import { isSequentialType, recordTitle, recordTypeText, recordZoneText } from '../lib/records';
+import { pointTransitions } from '../lib/sequence';
 import { VIEWPOINT_LABELS } from '../lib/viewpoint';
 import { formatDate } from '../lib/dates';
 import { attemptInEventRange, formationIds, normalizeGrids } from '../lib/validation';
 import { useEvents } from '../state/EventsContext';
 import type { RecordEntry, RecordEvent } from '../types';
 import { FormationGridEditor } from './FormationGridEditor';
+import { PointTransitions } from './PointTransitions';
 import { MembershipBadge } from './MembershipBadge';
 import { VideographerBadge } from './VideographerBadge';
 import { ViewpointIcon } from './ViewpointIcon';
@@ -22,6 +24,7 @@ function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: Re
   const formation = formationIds(record.skydiverIds, event);
   const points = normalizeGrids(record.grids, record.type, formation);
   const sequential = isSequentialType(record.type);
+  const transitions = sequential ? pointTransitions(points, formation) : [];
   const members = sortByName(record.skydiverIds.flatMap((id) => byId.get(id) ?? []));
   const warnings = members.filter((s) => membershipStatus(s.membershipExpiration, event) !== 'current').length;
   const title = recordTypeText(record.type);
@@ -75,6 +78,7 @@ function RecordCard({ event, record, canEdit }: { event: RecordEvent; record: Re
                 {points.length} point{points.length === 1 ? '' : 's'}
               </span>
             )}
+            {transitions.length > 0 && <PointTransitions transitions={transitions} compact />}
             {warnings > 0 && <span className="text-amber-700">⚠ {warnings} membership warning{warnings === 1 ? '' : 's'}</span>}
           </div>
         </div>
