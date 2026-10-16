@@ -268,7 +268,7 @@ export function RecordFormPage() {
                       {i > 0 && transitions[i - 1] && !transitions[i - 1].passes && (
                         <>
                           {' '}
-                          <span title="Fewer than 75% moved from the previous point">
+                          <span title="Fewer than 75% changed neighbours from the previous point">
                             <span aria-hidden="true">⚠</span>
                             <span className="sr-only">(needs changes)</span>
                           </span>
