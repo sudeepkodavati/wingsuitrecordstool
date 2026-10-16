@@ -35,15 +35,9 @@ skydiver pool, and export the roster to PDF.
     single grid; switching away from a sequential type keeps only Point 1 when you save.
   - **Point changes (75% rule)**: for sequential records, every change between consecutive points
     (1 → 2, 2 → 3, …) is checked. At least 75% of the formation skydivers (rounded up, videographers
-    excluded) must change neighbours.
-    - A skydiver's neighbours are whoever is in the 8 surrounding cells, and on which side.
-    - They have changed if they gain or lose a neighbour, or a neighbour ends up on a different side.
-    - Moving the whole formation to other cells is therefore no change. Mirroring it is a change.
-    - Someone with no neighbours on either point counts as unchanged.
-
-    The record form lists each change, for example "3 of 4 changed neighbours (75%)", and marks
-    failing points with ⚠ on their tab. The record card shows "✓ Point changes OK" or which points
-    fall short. It is a warning only; saving is still allowed.
+    excluded) must be in a different cell on the next point. The record form lists each change, for
+    example "3 of 4 moved (75%)", and marks failing points with ⚠ on their tab. The record card
+    shows "✓ Point changes OK" or which points fall short. It is a warning only; saving is still allowed.
   - **Record attempt date**: required, and must fall within the event's start–end dates. It is
     prefilled with the start date. Record cards warn if a record has no attempt date (records saved
     before this field existed) or if the event dates later change and leave it outside the range.

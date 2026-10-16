@@ -224,25 +224,21 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '+ Add point' }));
     expect(screen.getByRole('tab', { name: /^Point 2/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
-    // A fresh copy fails the 75% rule: nobody has changed neighbours yet, and the tab is flagged.
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 0 of 2 changed neighbours (0%)');
+    // A fresh copy fails the 75% rule: nobody has moved yet, and the tab is flagged.
+    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 0 of 2 moved (0%)');
     expect(screen.getByRole('tab', { name: 'Point 2 (needs changes)' })).toBeInTheDocument();
 
     // Changing Point 2 leaves Point 1 alone.
     await user.click(screen.getByRole('button', { name: /#1 Alex Aero/ }));
     await user.keyboard('{ArrowLeft}');
     expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
-    // Alex was diagonal to Zoe and is now directly above her: both see their neighbour on a new side.
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 2 of 2 changed neighbours (100%)');
-    expect(screen.getByRole('tab', { name: 'Point 2' })).toBeInTheDocument();
-    // Moving Zoe left as well restores the original shape, just shifted one cell: that's no change.
+    // One of two moved is 50%: still short of 75%.
+    expect(screen.getByTestId('point-transitions')).toHaveTextContent('1 of 2 moved (50%)');
     await user.keyboard('{Escape}'); // deselect Alex, otherwise clicking Zoe swaps them
     await user.click(screen.getByRole('button', { name: /#2 Zoe Zephyr/ }));
     await user.keyboard('{ArrowLeft}');
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('0 of 2 changed neighbours (0%)');
-    expect(screen.getByRole('tab', { name: 'Point 2 (needs changes)' })).toBeInTheDocument();
-    await user.keyboard('{ArrowRight}');
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('2 of 2 changed neighbours (100%)');
+    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 2 of 2 moved (100%)');
+    expect(screen.getByRole('tab', { name: 'Point 2' })).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Point 1' }));
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
 
