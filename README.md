@@ -195,9 +195,35 @@ images are public, so you can run it with an empty Docker config:
    The account can still sign in but sees "No access yet". An organizer who still owns events can't
    be deleted from Authentication until their events are deleted.
 
-**Hosting**: `client/dist` is a static site and can go on any static host (Netlify, Vercel,
-Cloudflare Pages, GitHub Pages). Configure the host to send every page path to `index.html`, so
-links like `/events/<id>` work on reload.
+## Deploying to Vercel
+
+`vercel.json` holds all the build settings:
+- `npm ci`, then `npm run build`, serving `client/dist` on Node 22 (from `engines` in
+  `package.json`).
+- Every page path is rewritten to `index.html`, so `/events/<id>` and `/share/<token>` work when
+  opened directly.
+- Hashed `/assets/*` files are cached for a year, and a few basic security headers are added.
+
+One-time setup:
+
+1. Sign in at vercel.com with GitHub, choose **Add New → Project**, and import
+   `sudeepkodavati/wingsuitrecordstool`. Leave **Root Directory** as `./`; the settings come from
+   `vercel.json`.
+2. Under **Environment Variables**, add both for Production and Preview:
+   - `VITE_SUPABASE_URL`: `https://<project-ref>.supabase.co`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`: `sb_publishable_…`
+3. Click **Deploy**.
+4. In Supabase, open **Authentication → URL Configuration** and set the **Site URL** to the Vercel
+   address (for example `https://wingsuitrecordstool.vercel.app`).
+
+After that, every push to `main` deploys to production, and other branches get preview URLs.
+These variables are built into the JavaScript, so after changing one, redeploy (Deployments → ⋯ →
+Redeploy).
+
+Vercel's free Hobby plan is for non-commercial use; commercial use needs Pro.
+
+Other static hosts (Netlify, Cloudflare Pages) work too: build with `npm run build`, serve
+`client/dist`, and send every page path to `index.html`.
 
 ## Upgrading
 

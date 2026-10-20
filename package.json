@@ -19,7 +19,7 @@
     "dev:localdb": "npm run dev:localdb -w client"
   },
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "devDependencies": {
     "supabase": "^2.120.0"
