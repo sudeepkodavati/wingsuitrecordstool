@@ -200,8 +200,8 @@ images are public, so you can run it with an empty Docker config:
 `vercel.json` holds all the build settings:
 - `npm ci`, then `npm run build`, serving `client/dist` on Node 22 (from `engines` in
   `package.json`).
-- Every page path is rewritten to `index.html`, so `/events/<id>` and `/share/<token>` work when
-  opened directly.
+- Every page path except `/api/*` is rewritten to `index.html`, so `/events/<id>` and
+  `/share/<token>` work when opened directly.
 - Hashed `/assets/*` files are cached for a year, and a few basic security headers are added.
 
 One-time setup:
@@ -219,6 +219,17 @@ One-time setup:
 After that, every push to `main` deploys to production, and other branches get preview URLs.
 These variables are built into the JavaScript, so after changing one, redeploy (Deployments → ⋯ →
 Redeploy).
+
+**Keep-alive**: free Supabase projects pause after about a week of inactivity, which breaks
+logins and share links. A Vercel cron in `vercel.json` calls `/api/keep-alive` once a day (around
+08:00 UTC; on Hobby the exact minute varies within that hour).
+- `api/keep-alive.mjs` makes one harmless request: it calls the public `get_shared_event()` with a
+  token that matches nothing, using the same two environment variables as the site.
+- Crons only run on production deployments. Check them under the project's **Settings → Cron Jobs**,
+  where you can also run one manually and see its logs.
+- Optional: add a `CRON_SECRET` environment variable (any long random string). Vercel then sends it
+  with each cron call, and anyone else calling `/api/keep-alive` gets 401.
+- Tests: `npm run test:api`. The cron isn't needed on Supabase Pro, which never pauses.
 
 Vercel's free Hobby plan is for non-commercial use; commercial use needs Pro.
 

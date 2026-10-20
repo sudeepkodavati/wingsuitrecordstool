@@ -16,7 +16,8 @@
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
-    "dev:localdb": "npm run dev:localdb -w client"
+    "dev:localdb": "npm run dev:localdb -w client",
+    "test:api": "node --test scripts/*.test.mjs"
   },
   "engines": {
     "node": "22.x"
