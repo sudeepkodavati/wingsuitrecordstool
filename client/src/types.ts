@@ -63,6 +63,11 @@ export interface FormationGrid {
   size: number;
   /** Keyed by skydiver id. */
   positions: Record<string, GridPosition>;
+  /**
+   * Sequential points 2+: skydivers the organizer marked as having changed slot since the previous
+   * point. Ignored on point 1 and on non-sequential records.
+   */
+  changedIds?: string[];
 }
 
 /** Where the formation grid is viewed from. */

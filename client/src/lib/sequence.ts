@@ -1,7 +1,7 @@
 import type { FormationGrid } from '../types';
 
-/** At least this share of the formation must change cells between consecutive points. */
-export const MIN_MOVED_RATIO = 0.75;
+/** At least this share of the formation must change slot between consecutive points. */
+export const MIN_CHANGED_RATIO = 0.75;
 
 export interface PointTransition {
   /** 1-based point numbers, e.g. 1 → 2. */
@@ -9,35 +9,40 @@ export interface PointTransition {
   to: number;
   /** Skydivers placed on the earlier point. */
   total: number;
-  /** How many of them are in a different cell (row/column) on the later point. */
-  moved: number;
-  /** Minimum that must move: 75% of total, rounded up. */
+  /** Minimum that must change slot: 75% of total, rounded up. */
   required: number;
+  /** Skydivers the organizer marked on the later point as having changed slot. */
+  markedIds: string[];
+  marked: number;
   passes: boolean;
 }
 
 /**
- * For a sequential record, checks each change between consecutive points (1 → 2, 2 → 3, …):
- * at least 75% of the skydivers on the earlier point must be in a new cell on the next one.
- * `ids` are the formation skydivers (videographers excluded). A point with nobody on it passes.
+ * For a sequential record, checks each change between consecutive points (1 → 2, 2 → 3, …)
+ * against the organizer's manual marks: the skydivers ticked on the later point
+ * (`grid.changedIds`) must be at least 75% (rounded up) of the formation. `ids` are the formation
+ * skydivers (videographers excluded). A point with nobody on it passes.
  */
 export function pointTransitions(grids: FormationGrid[], ids: string[]): PointTransition[] {
   const result: PointTransition[] = [];
   for (let i = 0; i + 1 < grids.length; i++) {
-    const before = grids[i].positions;
-    const after = grids[i + 1].positions;
-    const placed = ids.filter((id) => before[id]);
-    const moved = placed.filter((id) => {
-      const a = before[id];
-      const b = after[id];
-      return !b || a.row !== b.row || a.col !== b.col;
-    }).length;
-    const required = Math.ceil(placed.length * MIN_MOVED_RATIO);
-    result.push({ from: i + 1, to: i + 2, total: placed.length, moved, required, passes: moved >= required });
+    const placed = ids.filter((id) => grids[i].positions[id]);
+    const required = Math.ceil(placed.length * MIN_CHANGED_RATIO);
+    const ticked = new Set(grids[i + 1].changedIds ?? []);
+    const markedIds = placed.filter((id) => ticked.has(id));
+    result.push({
+      from: i + 1,
+      to: i + 2,
+      total: placed.length,
+      required,
+      markedIds,
+      marked: markedIds.length,
+      passes: markedIds.length >= required,
+    });
   }
   return result;
 }
 
-export function percent(moved: number, total: number): number {
-  return total === 0 ? 100 : Math.round((moved / total) * 100);
+export function percent(part: number, total: number): number {
+  return total === 0 ? 100 : Math.round((part / total) * 100);
 }

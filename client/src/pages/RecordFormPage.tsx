@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Field, TextField } from '../components/FormField';
 import { formatDateRange } from '../lib/dates';
 import { FormationGridEditor } from '../components/FormationGridEditor';
+import { ChangeMarks } from '../components/ChangeMarks';
 import { PointTransitions } from '../components/PointTransitions';
 import { SkydiverPicker } from '../components/SkydiverPicker';
 import { cloneGrid } from '../lib/grid';
@@ -34,7 +35,7 @@ export function RecordFormPage() {
           type: source.type,
           skydiverIds: [...source.skydiverIds],
           // Older records may have no grid yet; copies get their own grid objects.
-          grids: normalizeGrids(source.grids, source.type, formationIds(source.skydiverIds, event)).map(cloneGrid),
+          grids: normalizeGrids(source.grids, source.type, formationIds(source.skydiverIds, event)).map((g) => cloneGrid(g)),
           viewpoint: source.viewpoint,
           attemptDate: source.attemptDate,
         }
@@ -76,9 +77,9 @@ export function RecordFormPage() {
   const setGrid = (index: number, grid: RecordInput['grids'][number]) =>
     setValues((v) => ({ ...v, grids: v.grids.map((g, i) => (i === index ? grid : g)) }));
 
-  /** New point = exact copy of the last one, appended at the end. */
+  /** New point = exact copy of the last one's layout (without its marks), appended at the end. */
   const addPoint = () => {
-    setValues((v) => ({ ...v, grids: [...v.grids, cloneGrid(v.grids[v.grids.length - 1])] }));
+    setValues((v) => ({ ...v, grids: [...v.grids, cloneGrid(v.grids[v.grids.length - 1], { withMarks: false })] }));
     setActivePoint(values.grids.length);
   };
 
@@ -268,7 +269,7 @@ export function RecordFormPage() {
                       {i > 0 && transitions[i - 1] && !transitions[i - 1].passes && (
                         <>
                           {' '}
-                          <span title="Fewer than 75% moved from the previous point">
+                          <span title="Fewer than 75% marked as changed slot from the previous point">
                             <span aria-hidden="true">⚠</span>
                             <span className="sr-only">(needs changes)</span>
                           </span>
@@ -297,6 +298,16 @@ export function RecordFormPage() {
               <div className="mb-4">
                 <PointTransitions transitions={transitions} />
               </div>
+            )}
+            {sequential && point > 0 && transitions[point - 1] && (
+              <ChangeMarks
+                key={`marks-${point}`}
+                event={event}
+                point={point + 1}
+                grid={visibleGrids[point]}
+                skydiverIds={orderedIds}
+                onChange={(changedIds) => setGrid(point, { ...visibleGrids[point], changedIds })}
+              />
             )}
             <FormationGridEditor
               key={point}

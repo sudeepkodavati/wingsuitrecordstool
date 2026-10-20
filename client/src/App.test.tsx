@@ -224,22 +224,29 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '+ Add point' }));
     expect(screen.getByRole('tab', { name: /^Point 2/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
-    // A fresh copy fails the 75% rule: nobody has moved yet, and the tab is flagged.
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 0 of 2 moved (0%)');
+    // A fresh copy has no marks yet, so it fails the 75% rule and the tab is flagged.
+    const transition = () => screen.getByTestId('transition-1-2');
+    expect(transition()).toHaveTextContent('Point 1 → Point 2: 0 of 2 marked as changed (0%) — 2 more needed (2 of 2).');
     expect(screen.getByRole('tab', { name: 'Point 2 (needs changes)' })).toBeInTheDocument();
+    const marks = screen.getByTestId('change-marks');
+    expect(within(marks).getByText('Who changed slot from Point 1 to Point 2?')).toBeInTheDocument();
 
-    // Changing Point 2 leaves Point 1 alone.
+    // Changing Point 2 leaves Point 1 alone, and moving people doesn't tick anything by itself.
     await user.click(screen.getByRole('button', { name: /#1 Alex Aero/ }));
     await user.keyboard('{ArrowLeft}');
     expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
-    // One of two moved is 50%: still short of 75%.
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('1 of 2 moved (50%)');
-    await user.keyboard('{Escape}'); // deselect Alex, otherwise clicking Zoe swaps them
-    await user.click(screen.getByRole('button', { name: /#2 Zoe Zephyr/ }));
-    await user.keyboard('{ArrowLeft}');
-    expect(screen.getByTestId('point-transitions')).toHaveTextContent('Point 1 → Point 2: 2 of 2 moved (100%)');
+    expect(transition()).toHaveTextContent('0 of 2 marked as changed');
+
+    // The organizer ticks who changed slot: one of two is 50%, both is 100%.
+    await user.click(within(marks).getByRole('checkbox', { name: /Alex Aero/ }));
+    expect(transition()).toHaveTextContent('1 of 2 marked as changed (50%)');
+    await user.click(within(marks).getByRole('checkbox', { name: /Zoe Zephyr/ }));
+    expect(transition()).toHaveTextContent('Point 1 → Point 2: 2 of 2 marked as changed (100%)');
     expect(screen.getByRole('tab', { name: 'Point 2' })).toBeInTheDocument();
+
+    // Point 1 has nothing to mark.
     await user.click(screen.getByRole('tab', { name: 'Point 1' }));
+    expect(screen.queryByTestId('change-marks')).not.toBeInTheDocument();
     expect(screen.getByTestId('cell-8-9')).toHaveAccessibleName(/#1 Alex Aero/);
 
     // Switching to a non-sequential type warns that extra points will be dropped.
@@ -251,6 +258,8 @@ describe('App', () => {
     expect(screen.getByText('2 points')).toBeInTheDocument();
     expect(screen.getByText('✓ Point changes OK')).toBeInTheDocument();
     let stored = store.snapshot();
+    expect(stored[0].records[0].grids[1].changedIds).toHaveLength(2);
+    expect(stored[0].records[0].grids[0].changedIds).toBeUndefined();
     expect(stored[0].records[0].grids).toHaveLength(2);
 
     // Duplicate opens a prefilled form; nothing is saved until Create.
@@ -258,7 +267,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Duplicate record' })).toBeInTheDocument();
     expect(screen.getByLabelText(/Type/)).toHaveValue('ws-seq-lf-nogrip-horizontal');
     expect(screen.getAllByRole('tab')).toHaveLength(2);
-    await user.click(screen.getByRole('tab', { name: 'Point 2' }));
+    await user.click(screen.getByRole('tab', { name: /^Point 2/ }));
     expect(screen.getByTestId('cell-8-8')).toHaveAccessibleName(/#1 Alex Aero/);
     await user.click(screen.getByRole('button', { name: 'Create record' }));
 

@@ -225,7 +225,7 @@ export function FormationGridEditor({ event, grid, skydiverIds, onChange, readOn
           <span className="text-slate-500">
             {grid.size} × {grid.size} · min {minSize} to fit {skydiverIds.length}
           </span>
-          <button type="button" className="ml-auto text-sky-700 hover:underline" onClick={() => onChange?.(reconcileGrid({ size: grid.size }, skydiverIds))}>
+          <button type="button" className="ml-auto text-sky-700 hover:underline" onClick={() => onChange?.(reconcileGrid({ size: grid.size, changedIds: grid.changedIds }, skydiverIds))}>
             Reset layout
           </button>
         </div>

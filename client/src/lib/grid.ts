@@ -55,7 +55,9 @@ export function reconcileGrid(grid: Partial<FormationGrid> | undefined, orderedI
     positions[id] = p;
     taken.add(key(p));
   }
-  return { size, positions };
+  // Organizer marks only make sense for skydivers still on the formation.
+  const marked = grid?.changedIds?.filter((id) => positions[id]);
+  return marked && marked.length > 0 ? { size, positions, changedIds: marked } : { size, positions };
 }
 
 /** Moves a skydiver to a cell; if another skydiver is there, the two swap places. */
@@ -71,10 +73,15 @@ export function moveInGrid(grid: FormationGrid, id: string, to: GridPosition): F
   return { ...grid, positions };
 }
 
-/** Deep copy, so editing the copy never changes the original (used when adding a point). */
-export function cloneGrid(grid: FormationGrid): FormationGrid {
-  return {
+/**
+ * Deep copy, so editing the copy never changes the original. Organizer marks are copied too (for
+ * duplicating a record); pass `withMarks: false` when the copy is a new point.
+ */
+export function cloneGrid(grid: FormationGrid, { withMarks = true }: { withMarks?: boolean } = {}): FormationGrid {
+  const copy: FormationGrid = {
     size: grid.size,
     positions: Object.fromEntries(Object.entries(grid.positions).map(([id, p]) => [id, { ...p }])),
   };
+  if (withMarks && grid.changedIds?.length) copy.changedIds = [...grid.changedIds];
+  return copy;
 }

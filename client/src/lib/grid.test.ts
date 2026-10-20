@@ -81,3 +81,21 @@ describe('cloneGrid', () => {
     expect(g.positions.a.row).toBe(1);
   });
 });
+
+describe('organizer marks on a grid', () => {
+  const marked = { size: 4, positions: { a: { row: 0, col: 0 }, b: { row: 0, col: 1 } }, changedIds: ['a', 'b'] };
+
+  it('reconcile keeps marks for skydivers still on the formation', () => {
+    expect(reconcileGrid(marked, ['a']).changedIds).toEqual(['a']);
+    expect(reconcileGrid({ ...marked, changedIds: [] }, ['a', 'b'])).not.toHaveProperty('changedIds');
+  });
+
+  it('moving a skydiver keeps the marks', () => {
+    expect(moveInGrid(marked, 'a', { row: 3, col: 3 }).changedIds).toEqual(['a', 'b']);
+  });
+
+  it('clone copies marks unless asked not to (new points start unmarked)', () => {
+    expect(cloneGrid(marked).changedIds).toEqual(['a', 'b']);
+    expect(cloneGrid(marked, { withMarks: false })).not.toHaveProperty('changedIds');
+  });
+});

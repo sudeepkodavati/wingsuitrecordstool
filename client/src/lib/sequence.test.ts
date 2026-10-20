@@ -2,51 +2,59 @@ import { describe, expect, it } from 'vitest';
 import type { FormationGrid } from '../types';
 import { percent, pointTransitions } from './sequence';
 
-const grid = (positions: Record<string, [number, number]>, size = 10): FormationGrid => ({
-  size,
+const grid = (positions: Record<string, [number, number]>, changedIds?: string[]): FormationGrid => ({
+  size: 10,
   positions: Object.fromEntries(Object.entries(positions).map(([id, [row, col]]) => [id, { row, col }])),
+  ...(changedIds ? { changedIds } : {}),
 });
 
 const ids = ['a', 'b', 'c', 'd'];
-const p1 = grid({ a: [0, 0], b: [0, 1], c: [0, 2], d: [0, 3] });
+const layout = (changedIds?: string[]) => grid({ a: [0, 1], b: [1, 0], c: [1, 2], d: [2, 1] }, changedIds);
 
-describe('pointTransitions', () => {
-  it('fails an exact copy (nobody moved)', () => {
-    const [t] = pointTransitions([p1, p1], ids);
-    expect(t).toEqual({ from: 1, to: 2, total: 4, moved: 0, required: 3, passes: false });
+describe('pointTransitions (organizer marks)', () => {
+  it('fails with no marks', () => {
+    expect(pointTransitions([layout(), layout()], ids)[0]).toEqual({
+      from: 1,
+      to: 2,
+      total: 4,
+      required: 3,
+      markedIds: [],
+      marked: 0,
+      passes: false,
+    });
   });
 
   it('passes at exactly 75% and fails just below it', () => {
-    const three = grid({ a: [5, 0], b: [5, 1], c: [5, 2], d: [0, 3] });
-    const two = grid({ a: [5, 0], b: [5, 1], c: [0, 2], d: [0, 3] });
-    expect(pointTransitions([p1, three], ids)[0]).toMatchObject({ moved: 3, required: 3, passes: true });
-    expect(pointTransitions([p1, two], ids)[0]).toMatchObject({ moved: 2, required: 3, passes: false });
+    expect(pointTransitions([layout(), layout(['a', 'b', 'c'])], ids)[0]).toMatchObject({ marked: 3, passes: true });
+    expect(pointTransitions([layout(), layout(['a', 'b'])], ids)[0]).toMatchObject({ marked: 2, passes: false });
   });
 
-  it('rounds the requirement up (9 of 12, 2 of 2, 1 of 1)', () => {
+  it('counts marks only, not where people are on the grid', () => {
+    // Nobody moved, but the organizer judged three changed slot: that is what counts.
+    expect(pointTransitions([layout(), layout(['a', 'b', 'c'])], ids)[0].passes).toBe(true);
+  });
+
+  it('rounds the requirement up (9 of 12, 2 of 2)', () => {
     const twelve = Array.from({ length: 12 }, (_, i) => `s${i}`);
-    const g = grid(Object.fromEntries(twelve.map((id, i) => [id, [0, i] as [number, number]])), 12);
+    const g = grid(Object.fromEntries(twelve.map((id, i) => [id, [0, i] as [number, number]])));
     expect(pointTransitions([g, g], twelve)[0].required).toBe(9);
     expect(pointTransitions([grid({ a: [0, 0], b: [0, 1] }), grid({ a: [0, 0], b: [0, 1] })], ['a', 'b'])[0].required).toBe(2);
-    expect(pointTransitions([grid({ a: [0, 0] }), grid({ a: [1, 1] })], ['a'])[0]).toMatchObject({ required: 1, passes: true });
   });
 
-  it('checks every consecutive pair, not just 1 → 2', () => {
-    const p2 = grid({ a: [5, 0], b: [5, 1], c: [5, 2], d: [5, 3] });
-    const result = pointTransitions([p1, p2, p2], ids);
-    expect(result.map((t) => [t.from, t.to, t.passes])).toEqual([
-      [1, 2, true],
-      [2, 3, false],
+  it("checks every consecutive pair using each point's own marks", () => {
+    const result = pointTransitions([layout(), layout(['a', 'b', 'c', 'd']), layout(['a'])], ids);
+    expect(result.map((t) => [t.from, t.to, t.marked, t.passes])).toEqual([
+      [1, 2, 4, true],
+      [2, 3, 1, false],
     ]);
   });
 
-  it('counts swaps as moves and ignores skydivers who are not on the formation', () => {
-    const swapped = grid({ a: [0, 1], b: [0, 0], c: [0, 2], d: [0, 3], v: [9, 9] });
-    expect(pointTransitions([p1, swapped], ids)[0]).toMatchObject({ total: 4, moved: 2 });
+  it('ignores marks for skydivers who are not on the formation (videographers, removed people)', () => {
+    expect(pointTransitions([layout(), layout(['a', 'v', 'gone'])], ids)[0]).toMatchObject({ markedIds: ['a'], marked: 1 });
   });
 
   it('has no transitions for a single point and passes an empty formation', () => {
-    expect(pointTransitions([p1], ids)).toEqual([]);
+    expect(pointTransitions([layout()], ids)).toEqual([]);
     expect(pointTransitions([grid({}), grid({})], [])[0]).toMatchObject({ total: 0, required: 0, passes: true });
   });
 });
