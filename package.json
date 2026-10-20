@@ -1,6 +1,6 @@
 {
   "name": "wingsuit-records",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Wingsuit Skydiving Records tool — event and skydiver pool management for organizers and judges",
   "workspaces": [
